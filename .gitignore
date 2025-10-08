@@ -1,0 +1,26 @@
+# Data files
+data/
+*.db
+*.json
+
+# Environment
+.env
+.venv
+venv/
+
+# Streamlit secrets
+.streamlit/
+secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
