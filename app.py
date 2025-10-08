@@ -574,9 +574,10 @@ elif page == "Dashboard":
         st.subheader("📋 Call History")
         
         for record in reversed(filtered_db):
+            analysis = record.get('analysis', {})
             with st.expander(
                 f"📞 {record['call_type']} - {record['client_name']} - {record['call_date']} "
-                f"(Score: {record['analysis']['overall_score']:.1f}/100 | Compliance: {record['analysis']['methodology_compliance']:.1f}%)"
+                f"(Score: {analysis.get('overall_score', 0):.1f}/100 | Compliance: {analysis.get('methodology_compliance', 0):.1f}%)"
             ):
                 col1, col2 = st.columns([2, 1])
                 
@@ -776,9 +777,10 @@ elif page == "Admin View":
             st.subheader("🔍 Detailed Records")
             
             for record in reversed(filtered_db[:10]):  # Show last 10 for performance
+                analysis = record.get('analysis', {})
                 with st.expander(
                     f"{record['rm_name']} - {record['call_type']} - {record['client_name']} ({record['call_date']}) "
-                    f"- Score: {record['analysis']['overall_score']:.1f}/100 | Compliance: {record['analysis']['methodology_compliance']:.1f}%"
+                    f"- Score: {analysis.get('overall_score', 0):.1f}/100 | Compliance: {analysis.get('methodology_compliance', 0):.1f}%"
                 ):
                     col1, col2 = st.columns(2)
                     
