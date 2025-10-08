@@ -13,22 +13,25 @@ st.set_page_config(
 )
 
 # Initialize OpenAI client with proper error handling
+OPENAI_API_KEY = None
 try:
     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 except:
     try:
         OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     except:
-        OPENAI_API_KEY = None
-    
-if not OPENAI_API_KEY:
-    st.sidebar.error("⚠️ OpenAI API Key not configured! Please set it in Streamlit secrets or environment variables.")
+        pass
 
-# Create OpenAI client
+# Create OpenAI client only if API key is available
 client = None
 if OPENAI_API_KEY:
-    from openai import OpenAI
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
+    except Exception as e:
+        st.sidebar.error(f"⚠️ Error initializing OpenAI client: {str(e)}")
+else:
+    st.sidebar.warning("⚠️ OpenAI API Key not configured! Please set it in Streamlit secrets or environment variables.")
 
 # Create data directory if it doesn't exist
 DATA_DIR = Path("data")
