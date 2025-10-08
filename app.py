@@ -476,58 +476,62 @@ Case Studies Shared: Neha's story (Big 4 Partner)""",
                 
                 # Core Dimensions Breakdown
                 st.markdown("### 🎯 Core Quality Dimensions")
-                core_df = pd.DataFrame([
-                    {"Dimension": k.replace('_', ' ').title(), "Score": v, "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"]}
-                    for k, v in analysis['core_dimensions'].items()
-                ])
-                st.dataframe(core_df, use_container_width=True, hide_index=True)
+                core_dims = analysis.get('core_dimensions', {})
+                if core_dims:
+                    core_df = pd.DataFrame([
+                        {"Dimension": k.replace('_', ' ').title(), "Score": v, "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"]}
+                        for k, v in core_dims.items()
+                    ])
+                    st.dataframe(core_df, use_container_width=True, hide_index=True)
                 
                 # Iron Lady Parameters Breakdown
                 st.markdown("### 💎 Iron Lady Specific Parameters")
-                il_df = pd.DataFrame([
-                    {"Parameter": k.replace('_', ' ').title(), "Score": v, "Max": 10}
-                    for k, v in analysis['iron_lady_parameters'].items()
-                ])
-                st.dataframe(il_df, use_container_width=True, hide_index=True)
+                il_params = analysis.get('iron_lady_parameters', {})
+                if il_params:
+                    il_df = pd.DataFrame([
+                        {"Parameter": k.replace('_', ' ').title(), "Score": v, "Max": 10}
+                        for k, v in il_params.items()
+                    ])
+                    st.dataframe(il_df, use_container_width=True, hide_index=True)
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
                     st.markdown("### ✅ Strengths")
-                    for strength in analysis['key_insights']['strengths']:
+                    for strength in analysis.get('key_insights', {}).get('strengths', []):
                         st.success(f"✓ {strength}")
                     
                     st.markdown("### 🌟 Best Moments")
-                    for moment in analysis['key_insights']['best_moments']:
+                    for moment in analysis.get('key_insights', {}).get('best_moments', []):
                         st.write(f"⭐ {moment}")
                 
                 with col2:
                     st.markdown("### 🔴 Critical Gaps")
-                    for gap in analysis['key_insights']['critical_gaps']:
+                    for gap in analysis.get('key_insights', {}).get('critical_gaps', []):
                         st.error(f"✗ {gap}")
                     
                     st.markdown("### ⚠️ Missed Opportunities")
-                    for opp in analysis['key_insights']['missed_opportunities']:
+                    for opp in analysis.get('key_insights', {}).get('missed_opportunities', []):
                         st.warning(f"→ {opp}")
                 
                 st.markdown("### 💡 General Coaching Recommendations")
-                for rec in analysis['coaching_recommendations']:
+                for rec in analysis.get('coaching_recommendations', []):
                     st.write(f"🎯 {rec}")
                 
                 st.markdown("### 🎓 Iron Lady Specific Coaching")
-                for rec in analysis['iron_lady_specific_coaching']:
+                for rec in analysis.get('iron_lady_specific_coaching', []):
                     st.write(f"💎 {rec}")
                 
                 # Outcome Prediction
                 st.markdown("### 🔮 Outcome Prediction")
-                pred = analysis['outcome_prediction']
+                pred = analysis.get('outcome_prediction', {})
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Likely Result", pred['likely_result'].replace('_', ' ').title())
+                    st.metric("Likely Result", pred.get('likely_result', 'N/A').replace('_', ' ').title())
                 with col2:
-                    st.metric("Confidence", f"{pred['confidence']}%")
+                    st.metric("Confidence", f"{pred.get('confidence', 0)}%")
                 with col3:
-                    st.write(f"**Reasoning:** {pred['reasoning']}")
+                    st.write(f"**Reasoning:** {pred.get('reasoning', 'N/A')}")
 
 # DASHBOARD PAGE
 elif page == "Dashboard":
@@ -587,7 +591,7 @@ elif page == "Dashboard":
                     st.write(f"**Call Type:** {record['call_type']}")
                     st.write(f"**Outcome:** {record['pitch_outcome']}")
                     st.write(f"**Duration:** {record.get('call_duration', 'N/A')} minutes")
-                    st.write(f"**Summary:** {record['analysis']['call_summary']}")
+                    st.write(f"**Summary:** {analysis.get('call_summary', 'No summary available')}")
                 
                 with col2:
                     st.metric("Overall Score", f"{analysis.get('overall_score', 0):.1f}/100")
@@ -646,7 +650,7 @@ elif page == "Admin View":
         st.markdown("---")
         st.subheader("📊 Call Type Performance")
         call_type_data = {}
-        for record in filtered_db:
+        for record in db:
             ct = record.get('call_type', 'Unknown')
             if ct not in call_type_data:
                 call_type_data[ct] = {'count': 0, 'scores': [], 'compliance': []}
