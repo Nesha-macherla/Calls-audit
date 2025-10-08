@@ -3,7 +3,6 @@ import pandas as pd
 import json
 import os
 from datetime import datetime
-import openai
 from pathlib import Path
 
 # Page configuration
@@ -15,15 +14,21 @@ st.set_page_config(
 
 # Initialize OpenAI client with proper error handling
 try:
-    openai.api_key = st.secrets["OPENAI_API_KEY"]
+    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 except:
     try:
-        openai.api_key = os.getenv("OPENAI_API_KEY")
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     except:
-        openai.api_key = None
+        OPENAI_API_KEY = None
     
-if not openai.api_key:
+if not OPENAI_API_KEY:
     st.sidebar.error("⚠️ OpenAI API Key not configured! Please set it in Streamlit secrets or environment variables.")
+
+# Create OpenAI client
+client = None
+if OPENAI_API_KEY:
+    from openai import OpenAI
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Create data directory if it doesn't exist
 DATA_DIR = Path("data")
@@ -149,7 +154,7 @@ def save_db(data):
 def analyze_call_with_gpt(file_path, rm_name, client_name, pitch_outcome, call_type, additional_context):
     """Analyze call recording using ChatGPT API with comprehensive Iron Lady parameters"""
     
-    if not openai.api_key:
+    if not client:
         st.error("❌ OpenAI API key is not configured. Please set it up in secrets or environment variables.")
         return None
     
@@ -273,7 +278,7 @@ Provide comprehensive analysis in this JSON format:
 Provide actionable, specific feedback for {rm_name} to improve their {call_type} performance.
 """
 
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a professional Iron Lady sales call analyst with deep expertise in the 27 Principles framework and community-based coaching methodology. Always respond with valid JSON only. Be specific, actionable, and focus on Iron Lady methodology compliance."},
