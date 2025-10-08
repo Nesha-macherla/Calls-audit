@@ -823,17 +823,17 @@ elif page == "Admin View":
                             emoji = "🟢" if score >= 8 else "🟡" if score >= 6 else "🔴"
                             st.write(f"{emoji} {param.replace('_', ' ').title()}: {score}/10")
                     
-                    # Show insights if available
-                    insights = record['analysis'].get('key_insights', {})
+                      # Show insights if available
+                    insights = analysis.get('key_insights', {})
                     if insights.get('strengths'):
-                        st.write("**Strengths:**")
-                        for s in insights['strengths']:
-                            st.write(f"✓ {s}")
+                        st.markdown("**Top Strengths:**")
+                        for item in insights['strengths'][:3]:
+                            st.write(f"✓ {item}")
                     
                     if insights.get('critical_gaps'):
-                        st.write("**Critical Gaps:**")
-                        for g in insights['critical_gaps']:
-                            st.write(f"✗ {g}")
+                        st.markdown("**Critical Gaps:**")
+                        for item in insights['critical_gaps'][:3]:
+                            st.write(f"✗ {item}")
                     
                     # Show recommendations if available
                     if 'coaching_recommendations' in record['analysis']:
