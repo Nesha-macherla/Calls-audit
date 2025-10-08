@@ -556,8 +556,8 @@ elif page == "Dashboard":
         
         # Summary metrics
         success_rate = len([r for r in filtered_db if "Success" in r['pitch_outcome']]) / len(filtered_db) * 100
-        avg_score = sum([r['analysis']['overall_score'] for r in filtered_db]) / len(filtered_db)
-        avg_compliance = sum([r['analysis']['methodology_compliance'] for r in filtered_db]) / len(filtered_db)
+        avg_score = sum([r['analysis'].get('overall_score', 0) for r in filtered_db]) / len(filtered_db)
+        avg_compliance = sum([r['analysis'].get('methodology_compliance', 0) for r in filtered_db]) / len(filtered_db)
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -589,10 +589,11 @@ elif page == "Dashboard":
                     st.write(f"**Summary:** {record['analysis']['call_summary']}")
                 
                 with col2:
-                    st.metric("Overall Score", f"{record['analysis']['overall_score']:.1f}/100")
-                    st.metric("IL Compliance", f"{record['analysis']['methodology_compliance']:.1f}%")
-                    st.write(f"**Effectiveness:** {record['analysis']['call_effectiveness']}")
-                    st.write(f"**Prediction:** {record['analysis']['outcome_prediction']['likely_result'].replace('_', ' ').title()}")
+                    st.metric("Overall Score", f"{analysis.get('overall_score', 0):.1f}/100")
+                    st.metric("IL Compliance", f"{analysis.get('methodology_compliance', 0):.1f}%")
+                    st.write(f"**Effectiveness:** {analysis.get('call_effectiveness', 'N/A')}")
+                    pred = analysis.get('outcome_prediction', {})
+                    st.write(f"**Prediction:** {pred.get('likely_result', 'N/A').replace('_', ' ').title()}")
                 
                 st.markdown("**Top Strengths:**")
                 for item in record['analysis']['key_insights']['strengths'][:3]:
@@ -631,10 +632,10 @@ elif page == "Admin View":
             success_count = len([r for r in db if "Success" in r['pitch_outcome']])
             st.metric("Successful Calls", success_count)
         with col3:
-            avg_score = sum([r['analysis']['overall_score'] for r in db]) / len(db)
+            avg_score = sum([r['analysis'].get('overall_score', 0) for r in db]) / len(db)
             st.metric("Avg Score", f"{avg_score:.1f}/100")
         with col4:
-            avg_compliance = sum([r['analysis']['methodology_compliance'] for r in db]) / len(db)
+            avg_compliance = sum([r['analysis'].get('methodology_compliance', 0) for r in db]) / len(db)
             st.metric("Avg IL Compliance", f"{avg_compliance:.1f}%")
         with col5:
             unique_rms = len(set([r['rm_name'] for r in db]))
@@ -644,13 +645,13 @@ elif page == "Admin View":
         st.markdown("---")
         st.subheader("📊 Call Type Performance")
         call_type_data = {}
-        for record in db:
+        for record in filtered_db:
             ct = record.get('call_type', 'Unknown')
             if ct not in call_type_data:
                 call_type_data[ct] = {'count': 0, 'scores': [], 'compliance': []}
             call_type_data[ct]['count'] += 1
-            call_type_data[ct]['scores'].append(record['analysis']['overall_score'])
-            call_type_data[ct]['compliance'].append(record['analysis']['methodology_compliance'])
+            call_type_data[ct]['scores'].append(record['analysis'].get('overall_score', 0))
+            call_type_data[ct]['compliance'].append(record['analysis'].get('methodology_compliance', 0))
         
         ct_df = pd.DataFrame([
             {
@@ -715,10 +716,10 @@ elif page == "Admin View":
                 "Call Type": record.get('call_type', 'N/A'),
                 "Duration": f"{record.get('call_duration', 'N/A')} min",
                 "Outcome": record['pitch_outcome'],
-                "Overall Score": f"{record['analysis']['overall_score']:.1f}",
-                "IL Compliance": f"{record['analysis']['methodology_compliance']:.1f}%",
-                "Effectiveness": record['analysis']['call_effectiveness'],
-                "Prediction": record['analysis']['outcome_prediction']['likely_result'].replace('_', ' ').title(),
+                "Overall Score": f"{record['analysis'].get('overall_score', 0):.1f}",
+                "IL Compliance": f"{record['analysis'].get('methodology_compliance', 0):.1f}%",
+                "Effectiveness": record['analysis'].get('call_effectiveness', 'N/A'),
+                "Prediction": record['analysis'].get('outcome_prediction', {}).get('likely_result', 'N/A').replace('_', ' ').title(),
                 "Uploaded": record['uploaded_at'].split('T')[0]
             })
         
@@ -744,7 +745,7 @@ elif page == "Admin View":
             param_counts = {}
             
             for record in filtered_db:
-                for param, score in record['analysis']['iron_lady_parameters'].items():
+                for param, score in record['analysis'].get('iron_lady_parameters', {}).items():
                     if param not in param_totals:
                         param_totals[param] = 0
                         param_counts[param] = 0
@@ -753,19 +754,22 @@ elif page == "Admin View":
             
             param_avg = {param: (param_totals[param] / param_counts[param]) for param in param_totals}
             
-            param_df = pd.DataFrame([
-                {
-                    "Parameter": param.replace('_', ' ').title(),
-                    "Avg Score": f"{score:.1f}",
-                    "Max": "10",
-                    "Performance": "🟢 Excellent" if score >= 8 else "🟡 Good" if score >= 6 else "🔴 Needs Work"
-                }
-                for param, score in sorted(param_avg.items(), key=lambda x: x[1], reverse=True)
-            ])
-            
-            st.dataframe(param_df, use_container_width=True, hide_index=True)
-            
-            st.info("💡 **Coaching Focus:** Prioritize parameters marked 🔴 Needs Work for team training")
+            if param_avg:  # Only show if we have data
+                param_df = pd.DataFrame([
+                    {
+                        "Parameter": param.replace('_', ' ').title(),
+                        "Avg Score": f"{score:.1f}",
+                        "Max": "10",
+                        "Performance": "🟢 Excellent" if score >= 8 else "🟡 Good" if score >= 6 else "🔴 Needs Work"
+                    }
+                    for param, score in sorted(param_avg.items(), key=lambda x: x[1], reverse=True)
+                ])
+                
+                st.dataframe(param_df, use_container_width=True, hide_index=True)
+                
+                st.info("💡 **Coaching Focus:** Prioritize parameters marked 🔴 Needs Work for team training")
+            else:
+                st.info("No Iron Lady parameter data available for selected filters")
             
             # Detailed view
             st.markdown("---")
@@ -790,39 +794,51 @@ elif page == "Admin View":
                     
                     with col2:
                         st.write("**Performance Metrics:**")
-                        st.write(f"• Overall Score: {record['analysis']['overall_score']:.1f}/100")
-                        st.write(f"• IL Compliance: {record['analysis']['methodology_compliance']:.1f}%")
-                        st.write(f"• Effectiveness: {record['analysis']['call_effectiveness']}")
-                        st.write(f"• Prediction: {record['analysis']['outcome_prediction']['likely_result'].replace('_', ' ').title()}")
-                        st.write(f"• Confidence: {record['analysis']['outcome_prediction']['confidence']}%")
+                        st.write(f"• Overall Score: {record['analysis'].get('overall_score', 0):.1f}/100")
+                        st.write(f"• IL Compliance: {record['analysis'].get('methodology_compliance', 0):.1f}%")
+                        st.write(f"• Effectiveness: {record['analysis'].get('call_effectiveness', 'N/A')}")
+                        pred = record['analysis'].get('outcome_prediction', {})
+                        st.write(f"• Prediction: {pred.get('likely_result', 'N/A').replace('_', ' ').title()}")
+                        st.write(f"• Confidence: {pred.get('confidence', 0)}%")
                     
-                    st.write(f"**Summary:** {record['analysis']['call_summary']}")
+                    st.write(f"**Summary:** {record['analysis'].get('call_summary', 'No summary available')}")
                     
-                    st.write("**Core Dimensions:**")
-                    for dim, score in record['analysis']['core_dimensions'].items():
-                        max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][dim]["weight"]
-                        st.write(f"• {dim.replace('_', ' ').title()}: {score}/{max_score}")
+                    # Only show core dimensions if they exist
+                    if 'core_dimensions' in record['analysis']:
+                        st.write("**Core Dimensions:**")
+                        for dim, score in record['analysis']['core_dimensions'].items():
+                            max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][dim]["weight"]
+                            st.write(f"• {dim.replace('_', ' ').title()}: {score}/{max_score}")
                     
-                    st.write("**Iron Lady Parameters:**")
-                    for param, score in record['analysis']['iron_lady_parameters'].items():
-                        emoji = "🟢" if score >= 8 else "🟡" if score >= 6 else "🔴"
-                        st.write(f"{emoji} {param.replace('_', ' ').title()}: {score}/10")
+                    # Only show Iron Lady parameters if they exist
+                    if 'iron_lady_parameters' in record['analysis']:
+                        st.write("**Iron Lady Parameters:**")
+                        for param, score in record['analysis']['iron_lady_parameters'].items():
+                            emoji = "🟢" if score >= 8 else "🟡" if score >= 6 else "🔴"
+                            st.write(f"{emoji} {param.replace('_', ' ').title()}: {score}/10")
                     
-                    st.write("**Strengths:**")
-                    for s in record['analysis']['key_insights']['strengths']:
-                        st.write(f"✓ {s}")
+                    # Show insights if available
+                    insights = record['analysis'].get('key_insights', {})
+                    if insights.get('strengths'):
+                        st.write("**Strengths:**")
+                        for s in insights['strengths']:
+                            st.write(f"✓ {s}")
                     
-                    st.write("**Critical Gaps:**")
-                    for g in record['analysis']['key_insights']['critical_gaps']:
-                        st.write(f"✗ {g}")
+                    if insights.get('critical_gaps'):
+                        st.write("**Critical Gaps:**")
+                        for g in insights['critical_gaps']:
+                            st.write(f"✗ {g}")
                     
-                    st.write("**Coaching Recommendations:**")
-                    for r in record['analysis']['coaching_recommendations']:
-                        st.write(f"→ {r}")
+                    # Show recommendations if available
+                    if 'coaching_recommendations' in record['analysis']:
+                        st.write("**Coaching Recommendations:**")
+                        for r in record['analysis']['coaching_recommendations']:
+                            st.write(f"→ {r}")
                     
-                    st.write("**Iron Lady Specific Coaching:**")
-                    for r in record['analysis']['iron_lady_specific_coaching']:
-                        st.write(f"💎 {r}")
+                    if 'iron_lady_specific_coaching' in record['analysis']:
+                        st.write("**Iron Lady Specific Coaching:**")
+                        for r in record['analysis']['iron_lady_specific_coaching']:
+                            st.write(f"💎 {r}")
 
 # Footer
 st.sidebar.markdown("---")
