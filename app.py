@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import os
 from datetime import datetime
+import openai
 from pathlib import Path
 
 # Page configuration
@@ -12,26 +13,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize OpenAI client with proper error handling
-OPENAI_API_KEY = None
-try:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-except:
-    try:
-        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    except:
-        pass
-
-# Create OpenAI client only if API key is available
-client = None
-if OPENAI_API_KEY:
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=OPENAI_API_KEY)
-    except Exception as e:
-        st.sidebar.error(f"⚠️ Error initializing OpenAI client: {str(e)}")
-else:
-    st.sidebar.warning("⚠️ OpenAI API Key not configured! Please set it in Streamlit secrets or environment variables.")
+# Initialize OpenAI client
+openai.api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
 
 # Create data directory if it doesn't exist
 DATA_DIR = Path("data")
@@ -156,25 +139,26 @@ def save_db(data):
 
 def analyze_call_with_gpt(file_path, rm_name, client_name, pitch_outcome, call_type, additional_context):
     """Analyze call recording using ChatGPT API with comprehensive Iron Lady parameters"""
-    
-    if not client:
-        st.error("❌ OpenAI API key is not configured. Please set it up in secrets or environment variables.")
-        return None
-    
     try:
         # Get focus areas for this call type
         focus_areas = CALL_TYPE_FOCUS.get(call_type, [])
         focus_params = [param for param in focus_areas]
         
         prompt = f"""
-You are an expert Iron Lady sales call analyst. Analyze this {call_type} with the following details:
+You are an expert Iron Lady sales call analyst. Analyze this {call_type} objectively based ONLY on the call content and context provided.
 
 **CALL DETAILS:**
 - Relationship Manager: {rm_name}
-- Client/Participant Name: {client_name}
-- Call Outcome: {pitch_outcome}
+- Participant Name: {client_name}
 - Call Type: {call_type}
-- Context: {additional_context}
+- Call Context & Content: {additional_context}
+
+**IMPORTANT ANALYSIS INSTRUCTIONS:**
+1. Base your analysis ONLY on the actual call content described in the context
+2. Be objective - do not let the stated outcome influence your scoring
+3. Score each parameter independently based on what was actually said/done
+4. The outcome "{pitch_outcome}" is for reference only - analyze what actually happened in the call
+5. If specific information is missing from context, score conservatively but fairly
 
 **IRON LADY METHODOLOGY FRAMEWORK:**
 
@@ -209,8 +193,49 @@ You are an expert Iron Lady sales call analyst. Analyze this {call_type} with th
 - Brand Statement = Personal branding exercise
 - Case Studies = Success stories from participants like Neha (Big 4 Partner), Rashmi (Senior Leader), Chandana (Entrepreneur), Annapurna, Pushpalatha, Tejaswini
 
-**OUTCOME-BASED ANALYSIS:**
-Based on the call outcome being '{pitch_outcome}', provide realistic analysis.
+**STANDARDIZED SCORING CRITERIA:**
+
+**Rapport Building (0-20):**
+- 0-5: No greeting, cold, transactional
+- 6-10: Basic greeting, minimal warmth
+- 11-15: Good greeting, some personalization, warm tone
+- 16-20: Excellent greeting, name used multiple times, high empathy, strong relatedness
+
+**Needs Discovery (0-25):**
+- 0-6: 0-2 questions asked
+- 7-12: 3-4 basic questions
+- 13-18: 5-7 questions including some strategic ones
+- 19-25: 8+ strategic questions, deep BHAG exploration
+
+**Solution Presentation (0-25):**
+- 0-6: Program barely mentioned or explained
+- 7-12: Basic program mention, few benefits
+- 13-18: Good program explanation, 3-4 benefits covered
+- 19-25: Comprehensive presentation, all components (program, community, outcomes, social proof)
+
+**Objection Handling (0-15):**
+- 0-3: Concerns dismissed or ignored
+- 4-7: Basic acknowledgment, weak responses
+- 8-11: Good handling with empathy
+- 12-15: Excellent handling with empathy, solutions, and success stories
+
+**Closing Technique (0-15):**
+- 0-3: No close or very weak
+- 4-7: Vague next steps
+- 8-11: Clear next steps
+- 12-15: "Powerfully invite" used, clear commitments, decisive
+
+**Iron Lady Parameters (each 0-10):**
+- 0-3: Not mentioned or very weak
+- 4-6: Mentioned briefly or basic
+- 7-8: Good usage with context
+- 9-10: Excellent usage, specific, impactful
+
+**CRITICAL REQUIREMENTS:**
+1. Principles Usage: If NO principles mentioned by name = max 3 points
+2. Case Studies Usage: If NO specific names mentioned = max 4 points
+3. BHAG Fine Tuning: If BHAG not explored = max 4 points
+4. Commitment Getting: If NO explicit commitments = max 4 points
 
 Provide comprehensive analysis in this JSON format:
 
@@ -250,7 +275,7 @@ Provide comprehensive analysis in this JSON format:
     "outcome_prediction": {{
         "likely_result": "<registration_expected/follow_up_needed/needs_improvement>",
         "confidence": <0-100>,
-        "reasoning": "<explanation>"
+        "reasoning": "<explanation based on what was actually done in the call>"
     }},
     
     "coaching_recommendations": [
@@ -267,27 +292,33 @@ Provide comprehensive analysis in this JSON format:
         "commitment coaching point"
     ],
     
-    "call_summary": "<2-3 sentence summary focusing on Iron Lady methodology compliance and outcome>"
+    "call_summary": "<2-3 sentence objective summary based on actual call performance, not stated outcome>"
 }}
 
-**CRITICAL SCORING RULES:**
-1. Principles Usage < 7 = CRITICAL GAP (most important)
-2. Case Studies Usage < 6 = Major gap
-3. BHAG Fine Tuning < 7 = Needs improvement
-4. Commitment Getting < 7 = Weak closing
-5. Overall Score = (Core Dimensions * 0.6) + (Iron Lady Parameters * 0.4)
-6. Methodology Compliance = Iron Lady Parameters total percentage
+**SCORING RULES (STANDARDIZED):**
+1. Overall Score = (Core Dimensions * 0.6) + (Iron Lady Parameters * 0.4)
+2. Methodology Compliance = (Sum of Iron Lady Parameters / 100) * 100
+3. Call Effectiveness:
+   - 85-100: Excellent
+   - 70-84: Good
+   - 50-69: Average
+   - 0-49: Needs Improvement
+4. Outcome Prediction based on actual performance:
+   - registration_expected: Overall Score ≥ 80 AND Commitment Getting ≥ 7 AND BHAG Fine Tuning ≥ 7
+   - follow_up_needed: Overall Score 60-79 OR missing key commitments
+   - needs_improvement: Overall Score < 60
 
-Provide actionable, specific feedback for {rm_name} to improve their {call_type} performance.
+Analyze objectively based on what {rm_name} actually did in this {call_type}, not on the stated outcome.
 """
 
-        response = client.chat.completions.create(
+        response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a professional Iron Lady sales call analyst with deep expertise in the 27 Principles framework and community-based coaching methodology. Always respond with valid JSON only. Be specific, actionable, and focus on Iron Lady methodology compliance."},
+                {"role": "system", "content": "You are a professional Iron Lady sales call analyst. Analyze calls objectively based only on actual content and context provided. Do not let stated outcomes bias your analysis. Always respond with valid JSON only. Be consistent in scoring - same content should always get same scores."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7
+            temperature=0.3  # Lower temperature for more consistent results
+        )
         )
         
         analysis_text = response.choices[0].message.content
@@ -413,17 +444,35 @@ elif page == "Upload Recording":
         st.info("✓ " + "\n✓ ".join([p.replace('_', ' ').title() for p in focus_params[:5]]) + "\n... and more")
         
         additional_context = st.text_area(
-            "Call Context & Notes *",
-            placeholder="""Example:
+            "Call Context & Notes * (Be Detailed for Accurate Analysis)",
+            placeholder="""⚠️ IMPORTANT: Analysis is based on this context, not the outcome field. Be specific!
+
+Example:
 Participant's BHAG: Launch ₹50 lakh/year coaching practice in 12 months
 Current Situation: Running small yoga classes, 15 students, ₹30k/month
-Main Concerns: Pricing premium programs, confidence in sales, no online business experience
-Previous Interaction: Completed Day 1 & 2, very engaged, asked many questions
-Key Insights: Husband supportive but worried about investment
-Principles Discussed: Differentiate Branding, Shameless Pitching
-Case Studies Shared: Neha's story (Big 4 Partner)""",
-            height=150
+
+What RM Actually Said/Did in the Call:
+- Greeted warmly, used participant's name 5+ times
+- Asked 8 strategic questions about challenges and goals
+- Discussed "Differentiate Branding" and "Shameless Pitching" principles in detail
+- Shared Neha's case study (Big 4 Partner) and Rashmi's story
+- Created gap by highlighting missing network and pricing skills
+- Explored BHAG deeply, encouraged thinking bigger (₹1 crore target)
+- Explained 3-day program benefits and community value
+- Addressed time concern using efficiency principle
+- Created urgency about limited cohort spots
+- Got explicit commitment to attend Day 2 and Day 3
+- Used "Powerfully Invite" language in closing
+- Set clear next steps: Day 2 attendance and follow-up call
+
+Main Concerns Raised: Time management, pricing premium programs, lack of confidence
+How Concerns Were Handled: Shared time-saving strategies, pricing framework, confidence-building through community
+
+Key Moments: Participant got emotional about her dream, showed high enthusiasm by the end""",
+            height=200
         )
+        
+        st.info("💡 **Tip:** The more detailed your context, the more accurate the analysis. Describe what was ACTUALLY said and done in the call.")
         
         notes = st.text_area(
             "Additional Notes (Optional)",
@@ -456,107 +505,104 @@ Case Studies Shared: Neha's story (Big 4 Partner)""",
                     additional_context
                 )
                 
-                if not analysis:
-                    st.error("❌ Analysis failed. Please check your OpenAI API key configuration.")
-                else:
-                    # Save to database
-                    db = load_db()
-                    record = {
-                        "id": len(db) + 1,
-                        "rm_name": rm_name,
-                        "client_name": client_name,
-                        "call_type": call_type,
-                        "pitch_outcome": pitch_outcome,
-                        "call_date": str(call_date),
-                        "call_duration": call_duration,
-                        "uploaded_at": datetime.now().isoformat(),
-                        "file_path": str(file_path),
-                        "file_name": uploaded_file.name,
-                        "additional_context": additional_context,
-                        "notes": notes,
-                        "analysis": analysis
-                    }
-                    db.append(record)
-                    save_db(db)
+                # Save to database
+                db = load_db()
+                record = {
+                    "id": len(db) + 1,
+                    "rm_name": rm_name,
+                    "client_name": client_name,
+                    "call_type": call_type,
+                    "pitch_outcome": pitch_outcome,
+                    "call_date": str(call_date),
+                    "call_duration": call_duration,
+                    "uploaded_at": datetime.now().isoformat(),
+                    "file_path": str(file_path),
+                    "file_name": uploaded_file.name,
+                    "additional_context": additional_context,
+                    "notes": notes,
+                    "analysis": analysis
+                }
+                db.append(record)
+                save_db(db)
+                
+                st.success("✅ Analysis Complete!")
+                
+                # Display results
+                st.markdown("---")
+                st.subheader(f"📊 Analysis Results - {call_type}")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Overall Score", f"{analysis['overall_score']:.1f}/100")
+                with col2:
+                    st.metric("Iron Lady Compliance", f"{analysis['methodology_compliance']:.1f}%")
+                with col3:
+                    st.metric("Effectiveness", analysis['call_effectiveness'])
+                with col4:
+                    outcome_emoji = {"registration_expected": "🎉", "follow_up_needed": "📞", "needs_improvement": "⚠️"}
+                    st.metric("Prediction", analysis['outcome_prediction']['likely_result'].replace('_', ' ').title())
+                
+                st.markdown("**Executive Summary:**")
+                st.info(analysis['call_summary'])
+                
+                # Core Dimensions Breakdown
+                st.markdown("### 🎯 Core Quality Dimensions")
+                core_dims = analysis.get('core_dimensions', {})
+                if core_dims:
+                    core_df = pd.DataFrame([
+                        {"Dimension": k.replace('_', ' ').title(), "Score": v, "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"]}
+                        for k, v in core_dims.items()
+                    ])
+                    st.dataframe(core_df, use_container_width=True, hide_index=True)
+                
+                # Iron Lady Parameters Breakdown
+                st.markdown("### 💎 Iron Lady Specific Parameters")
+                il_params = analysis.get('iron_lady_parameters', {})
+                if il_params:
+                    il_df = pd.DataFrame([
+                        {"Parameter": k.replace('_', ' ').title(), "Score": v, "Max": 10}
+                        for k, v in il_params.items()
+                    ])
+                    st.dataframe(il_df, use_container_width=True, hide_index=True)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("### ✅ Strengths")
+                    for strength in analysis.get('key_insights', {}).get('strengths', []):
+                        st.success(f"✓ {strength}")
                     
-                    st.success("✅ Analysis Complete!")
+                    st.markdown("### 🌟 Best Moments")
+                    for moment in analysis.get('key_insights', {}).get('best_moments', []):
+                        st.write(f"⭐ {moment}")
+                
+                with col2:
+                    st.markdown("### 🔴 Critical Gaps")
+                    for gap in analysis.get('key_insights', {}).get('critical_gaps', []):
+                        st.error(f"✗ {gap}")
                     
-                    # Display results
-                    st.markdown("---")
-                    st.subheader(f"📊 Analysis Results - {call_type}")
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Overall Score", f"{analysis['overall_score']:.1f}/100")
-                    with col2:
-                        st.metric("Iron Lady Compliance", f"{analysis['methodology_compliance']:.1f}%")
-                    with col3:
-                        st.metric("Effectiveness", analysis['call_effectiveness'])
-                    with col4:
-                        outcome_emoji = {"registration_expected": "🎉", "follow_up_needed": "📞", "needs_improvement": "⚠️"}
-                        st.metric("Prediction", analysis['outcome_prediction']['likely_result'].replace('_', ' ').title())
-                    
-                    st.markdown("**Executive Summary:**")
-                    st.info(analysis['call_summary'])
-                    
-                    # Core Dimensions Breakdown
-                    st.markdown("### 🎯 Core Quality Dimensions")
-                    core_dims = analysis.get('core_dimensions', {})
-                    if core_dims:
-                        core_df = pd.DataFrame([
-                            {"Dimension": k.replace('_', ' ').title(), "Score": v, "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"]}
-                            for k, v in core_dims.items()
-                        ])
-                        st.dataframe(core_df, use_container_width=True, hide_index=True)
-                    
-                    # Iron Lady Parameters Breakdown
-                    st.markdown("### 💎 Iron Lady Specific Parameters")
-                    il_params = analysis.get('iron_lady_parameters', {})
-                    if il_params:
-                        il_df = pd.DataFrame([
-                            {"Parameter": k.replace('_', ' ').title(), "Score": v, "Max": 10}
-                            for k, v in il_params.items()
-                        ])
-                        st.dataframe(il_df, use_container_width=True, hide_index=True)
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("### ✅ Strengths")
-                        for strength in analysis.get('key_insights', {}).get('strengths', []):
-                            st.success(f"✓ {strength}")
-                        
-                        st.markdown("### 🌟 Best Moments")
-                        for moment in analysis.get('key_insights', {}).get('best_moments', []):
-                            st.write(f"⭐ {moment}")
-                    
-                    with col2:
-                        st.markdown("### 🔴 Critical Gaps")
-                        for gap in analysis.get('key_insights', {}).get('critical_gaps', []):
-                            st.error(f"✗ {gap}")
-                        
-                        st.markdown("### ⚠️ Missed Opportunities")
-                        for opp in analysis.get('key_insights', {}).get('missed_opportunities', []):
-                            st.warning(f"→ {opp}")
-                    
-                    st.markdown("### 💡 General Coaching Recommendations")
-                    for rec in analysis.get('coaching_recommendations', []):
-                        st.write(f"🎯 {rec}")
-                    
-                    st.markdown("### 🎓 Iron Lady Specific Coaching")
-                    for rec in analysis.get('iron_lady_specific_coaching', []):
-                        st.write(f"💎 {rec}")
-                    
-                    # Outcome Prediction
-                    st.markdown("### 🔮 Outcome Prediction")
-                    pred = analysis.get('outcome_prediction', {})
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Likely Result", pred.get('likely_result', 'N/A').replace('_', ' ').title())
-                    with col2:
-                        st.metric("Confidence", f"{pred.get('confidence', 0)}%")
-                    with col3:
-                        st.write(f"**Reasoning:** {pred.get('reasoning', 'N/A')}")
+                    st.markdown("### ⚠️ Missed Opportunities")
+                    for opp in analysis.get('key_insights', {}).get('missed_opportunities', []):
+                        st.warning(f"→ {opp}")
+                
+                st.markdown("### 💡 General Coaching Recommendations")
+                for rec in analysis.get('coaching_recommendations', []):
+                    st.write(f"🎯 {rec}")
+                
+                st.markdown("### 🎓 Iron Lady Specific Coaching")
+                for rec in analysis.get('iron_lady_specific_coaching', []):
+                    st.write(f"💎 {rec}")
+                
+                # Outcome Prediction
+                st.markdown("### 🔮 Outcome Prediction")
+                pred = analysis.get('outcome_prediction', {})
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Likely Result", pred.get('likely_result', 'N/A').replace('_', ' ').title())
+                with col2:
+                    st.metric("Confidence", f"{pred.get('confidence', 0)}%")
+                with col3:
+                    st.write(f"**Reasoning:** {pred.get('reasoning', 'N/A')}")
 
 # DASHBOARD PAGE
 elif page == "Dashboard":
@@ -625,17 +671,13 @@ elif page == "Dashboard":
                     pred = analysis.get('outcome_prediction', {})
                     st.write(f"**Prediction:** {pred.get('likely_result', 'N/A').replace('_', ' ').title()}")
                 
-                # Show insights if available - SAFE ACCESS
-                insights = analysis.get('key_insights', {})
-                if insights.get('strengths'):
-                    st.markdown("**Top Strengths:**")
-                    for item in insights['strengths'][:3]:
-                        st.write(f"✓ {item}")
+                st.markdown("**Top Strengths:**")
+                for item in record['analysis']['key_insights']['strengths'][:3]:
+                    st.write(f"✓ {item}")
                 
-                if insights.get('critical_gaps'):
-                    st.markdown("**Critical Gaps:**")
-                    for item in insights['critical_gaps'][:3]:
-                        st.write(f"✗ {item}")
+                st.markdown("**Critical Gaps:**")
+                for item in record['analysis']['key_insights']['critical_gaps'][:3]:
+                    st.write(f"✗ {item}")
                 
                 # Download analysis button
                 analysis_json = json.dumps(record, indent=2)
@@ -788,7 +830,7 @@ elif page == "Admin View":
             
             param_avg = {param: (param_totals[param] / param_counts[param]) for param in param_totals}
             
-            if param_avg:
+            if param_avg:  # Only show if we have data
                 param_df = pd.DataFrame([
                     {
                         "Parameter": param.replace('_', ' ').title(),
@@ -809,7 +851,7 @@ elif page == "Admin View":
             st.markdown("---")
             st.subheader("🔍 Detailed Records")
             
-            for record in reversed(filtered_db[:10]):
+            for record in reversed(filtered_db[:10]):  # Show last 10 for performance
                 analysis = record.get('analysis', {})
                 with st.expander(
                     f"{record['rm_name']} - {record['call_type']} - {record['client_name']} ({record['call_date']}) "
@@ -829,31 +871,31 @@ elif page == "Admin View":
                     
                     with col2:
                         st.write("**Performance Metrics:**")
-                        st.write(f"• Overall Score: {analysis.get('overall_score', 0):.1f}/100")
-                        st.write(f"• IL Compliance: {analysis.get('methodology_compliance', 0):.1f}%")
-                        st.write(f"• Effectiveness: {analysis.get('call_effectiveness', 'N/A')}")
-                        pred = analysis.get('outcome_prediction', {})
+                        st.write(f"• Overall Score: {record['analysis'].get('overall_score', 0):.1f}/100")
+                        st.write(f"• IL Compliance: {record['analysis'].get('methodology_compliance', 0):.1f}%")
+                        st.write(f"• Effectiveness: {record['analysis'].get('call_effectiveness', 'N/A')}")
+                        pred = record['analysis'].get('outcome_prediction', {})
                         st.write(f"• Prediction: {pred.get('likely_result', 'N/A').replace('_', ' ').title()}")
                         st.write(f"• Confidence: {pred.get('confidence', 0)}%")
                     
-                    st.write(f"**Summary:** {analysis.get('call_summary', 'No summary available')}")
+                    st.write(f"**Summary:** {record['analysis'].get('call_summary', 'No summary available')}")
                     
-                    # Core dimensions - SAFE ACCESS
-                    if 'core_dimensions' in analysis:
+                    # Only show core dimensions if they exist
+                    if 'core_dimensions' in record['analysis']:
                         st.write("**Core Dimensions:**")
-                        for dim, score in analysis['core_dimensions'].items():
+                        for dim, score in record['analysis']['core_dimensions'].items():
                             max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][dim]["weight"]
                             st.write(f"• {dim.replace('_', ' ').title()}: {score}/{max_score}")
                     
-                    # Iron Lady parameters - SAFE ACCESS
-                    if 'iron_lady_parameters' in analysis:
+                    # Only show Iron Lady parameters if they exist
+                    if 'iron_lady_parameters' in record['analysis']:
                         st.write("**Iron Lady Parameters:**")
-                        for param, score in analysis['iron_lady_parameters'].items():
+                        for param, score in record['analysis']['iron_lady_parameters'].items():
                             emoji = "🟢" if score >= 8 else "🟡" if score >= 6 else "🔴"
                             st.write(f"{emoji} {param.replace('_', ' ').title()}: {score}/10")
                     
-                    # Show insights - SAFE ACCESS
-                    insights = analysis.get('key_insights', {})
+                    # Show insights if available
+                    insights = record['analysis'].get('key_insights', {})
                     if insights.get('strengths'):
                         st.write("**Strengths:**")
                         for s in insights['strengths']:
@@ -864,15 +906,15 @@ elif page == "Admin View":
                         for g in insights['critical_gaps']:
                             st.write(f"✗ {g}")
                     
-                    # Show recommendations - SAFE ACCESS
-                    if 'coaching_recommendations' in analysis:
+                    # Show recommendations if available
+                    if 'coaching_recommendations' in record['analysis']:
                         st.write("**Coaching Recommendations:**")
-                        for r in analysis['coaching_recommendations']:
+                        for r in record['analysis']['coaching_recommendations']:
                             st.write(f"→ {r}")
                     
-                    if 'iron_lady_specific_coaching' in analysis:
+                    if 'iron_lady_specific_coaching' in record['analysis']:
                         st.write("**Iron Lady Specific Coaching:**")
-                        for r in analysis['iron_lady_specific_coaching']:
+                        for r in record['analysis']['iron_lady_specific_coaching']:
                             st.write(f"💎 {r}")
 
 # Footer
