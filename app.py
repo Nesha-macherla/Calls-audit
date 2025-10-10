@@ -318,7 +318,7 @@ Analyze objectively based on what {rm_name} actually did in this {call_type}, no
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3  # Lower temperature for more consistent results
-        )
+            )
         
         analysis_text = response.choices[0].message.content
         
