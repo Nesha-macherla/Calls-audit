@@ -318,7 +318,7 @@ Analyze objectively based on what {rm_name} actually did in this {call_type}, no
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3  # Lower temperature for more consistent results
-            )
+        )
         
         analysis_text = response.choices[0].message.content
         
@@ -671,11 +671,13 @@ elif page == "Dashboard":
                     st.write(f"**Prediction:** {pred.get('likely_result', 'N/A').replace('_', ' ').title()}")
                 
                 st.markdown("**Top Strengths:**")
-                for item in record['analysis']['key_insights']['strengths'][:3]:
+                strengths = record.get('analysis', {}).get('key_insights', {}).get('strengths', [])
+                for item in strengths[:3]:
                     st.write(f"✓ {item}")
                 
                 st.markdown("**Critical Gaps:**")
-                for item in record['analysis']['key_insights']['critical_gaps'][:3]:
+                gaps = record.get('analysis', {}).get('key_insights', {}).get('critical_gaps', [])
+                for item in gaps[:3]:
                     st.write(f"✗ {item}")
                 
                 # Download analysis button
