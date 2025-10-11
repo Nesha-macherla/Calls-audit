@@ -3,7 +3,6 @@ import pandas as pd
 import json
 import os
 from datetime import datetime
-import openai
 from pathlib import Path
 
 # Page configuration
@@ -13,9 +12,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize OpenAI client
-openai.api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
-
 # Create data directory if it doesn't exist
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -23,7 +19,7 @@ UPLOADS_DIR = DATA_DIR / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 DB_FILE = DATA_DIR / "calls_database.json"
 
-# Iron Lady Specific Parameters from the advanced analyzer
+# Iron Lady Specific Parameters
 IRON_LADY_PARAMETERS = {
     "Core Quality Dimensions": {
         "rapport_building": {
@@ -137,246 +133,188 @@ def save_db(data):
     with open(DB_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
-def analyze_call_with_gpt(file_path, rm_name, client_name, pitch_outcome, call_type, additional_context):
-    """Analyze call recording using ChatGPT API with comprehensive Iron Lady parameters"""
-    try:
-        # Get focus areas for this call type
-        focus_areas = CALL_TYPE_FOCUS.get(call_type, [])
-        focus_params = [param for param in focus_areas]
+def analyze_call_parameters(scores_dict, call_type):
+    """
+    Analyze call based on parameter scores provided by user
+    No GPT dependency - pure calculation based on parameters
+    """
+    
+    # Extract scores
+    core_dims = {
+        "rapport_building": scores_dict.get("rapport_building", 0),
+        "needs_discovery": scores_dict.get("needs_discovery", 0),
+        "solution_presentation": scores_dict.get("solution_presentation", 0),
+        "objection_handling": scores_dict.get("objection_handling", 0),
+        "closing_technique": scores_dict.get("closing_technique", 0)
+    }
+    
+    il_params = {
+        "profile_understanding": scores_dict.get("profile_understanding", 0),
+        "credibility_building": scores_dict.get("credibility_building", 0),
+        "principles_usage": scores_dict.get("principles_usage", 0),
+        "case_studies_usage": scores_dict.get("case_studies_usage", 0),
+        "gap_creation": scores_dict.get("gap_creation", 0),
+        "bhag_fine_tuning": scores_dict.get("bhag_fine_tuning", 0),
+        "urgency_creation": scores_dict.get("urgency_creation", 0),
+        "commitment_getting": scores_dict.get("commitment_getting", 0),
+        "contextualisation": scores_dict.get("contextualisation", 0),
+        "excitement_creation": scores_dict.get("excitement_creation", 0)
+    }
+    
+    # Calculate scores
+    core_total = sum(core_dims.values())
+    il_total = sum(il_params.values())
+    
+    overall_score = (core_total * 0.6) + (il_total * 0.4)
+    methodology_compliance = il_total
+    
+    # Determine effectiveness
+    if overall_score >= 85:
+        effectiveness = "Excellent"
+    elif overall_score >= 70:
+        effectiveness = "Good"
+    elif overall_score >= 50:
+        effectiveness = "Average"
+    else:
+        effectiveness = "Needs Improvement"
+    
+    # Generate insights based on scores
+    strengths = []
+    critical_gaps = []
+    missed_opportunities = []
+    best_moments = []
+    
+    # Analyze core dimensions
+    for param, score in core_dims.items():
+        max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][param]["weight"]
+        percentage = (score / max_score) * 100
+        param_name = param.replace('_', ' ').title()
         
-        prompt = f"""
-You are an expert Iron Lady sales call analyst. Analyze this {call_type} objectively based ONLY on the call content and context provided.
-
-**CALL DETAILS:**
-- Relationship Manager: {rm_name}
-- Participant Name: {client_name}
-- Call Type: {call_type}
-- Call Context & Content: {additional_context}
-
-**IMPORTANT ANALYSIS INSTRUCTIONS:**
-1. Base your analysis ONLY on the actual call content described in the context
-2. Be objective - do not let the stated outcome influence your scoring
-3. Score each parameter independently based on what was actually said/done
-4. The outcome "{pitch_outcome}" is for reference only - analyze what actually happened in the call
-5. If specific information is missing from context, score conservatively but fairly
-
-**IRON LADY METHODOLOGY FRAMEWORK:**
-
-**1. CORE QUALITY DIMENSIONS (Total: 100 points)**
-   - Rapport Building (0-20): Greetings, warmth, empathy, personalization, relatedness
-   - Needs Discovery (0-25): Strategic questions, understanding challenges and BHAG
-   - Solution Presentation (0-25): Program benefits, community value, outcomes
-   - Objection Handling (0-15): Concern handling with empathy and solutions
-   - Closing Technique (0-15): Powerful invite, next steps, commitment
-
-**2. IRON LADY SPECIFIC PARAMETERS (Total: 100 points)**
-   - Profile Understanding (0-10): Experience, role, challenges, goals
-   - Credibility Building (0-10): Iron Lady community, success stories, mentors
-   - Principles Usage (0-10): 27 Principles framework (Unpredictable Behaviour, 10000 Hours, Differentiate Branding, Shameless Pitching, Art of Negotiation, Contextualisation)
-   - Case Studies Usage (0-10): Success stories (Neha, Rashmi, Chandana, Annapurna, Pushpalatha, Tejaswini)
-   - Gap Creation (0-10): Highlighting what's missing to achieve BHAG
-   - BHAG Fine Tuning (0-10): Making them dream bigger, breakthrough goals
-   - Urgency Creation (0-10): Limited spots, immediate action, FOMO
-   - Commitment Getting (0-10): Explicit commitments for attendance and participation
-   - Contextualisation (0-10): Personalizing to participant's situation
-   - Excitement Creation (0-10): Enthusiasm about transformation journey
-
-**CRITICAL FOCUS FOR {call_type.upper()}:**
-{", ".join(focus_params)}
-
-**KEY IRON LADY CONCEPTS:**
-- BHAG = Big Hairy Audacious Goal (participant's major breakthrough goal)
-- 27 Principles = Core framework (Unpredictable Behaviour, 10000 Hours, Differentiate Branding, Maximize, Shameless Pitching, Art of Negotiation, Contextualisation, etc.)
-- Community = Network of successful women entrepreneurs and leaders
-- 3-Day Program = Day 1 & 2 (Workshop), Day 3 (Follow-up session)
-- Certification = Program completion credential
-- Brand Statement = Personal branding exercise
-- Case Studies = Success stories from participants like Neha (Big 4 Partner), Rashmi (Senior Leader), Chandana (Entrepreneur), Annapurna, Pushpalatha, Tejaswini
-
-**STANDARDIZED SCORING CRITERIA:**
-
-**Rapport Building (0-20):**
-- 0-5: No greeting, cold, transactional
-- 6-10: Basic greeting, minimal warmth
-- 11-15: Good greeting, some personalization, warm tone
-- 16-20: Excellent greeting, name used multiple times, high empathy, strong relatedness
-
-**Needs Discovery (0-25):**
-- 0-6: 0-2 questions asked
-- 7-12: 3-4 basic questions
-- 13-18: 5-7 questions including some strategic ones
-- 19-25: 8+ strategic questions, deep BHAG exploration
-
-**Solution Presentation (0-25):**
-- 0-6: Program barely mentioned or explained
-- 7-12: Basic program mention, few benefits
-- 13-18: Good program explanation, 3-4 benefits covered
-- 19-25: Comprehensive presentation, all components (program, community, outcomes, social proof)
-
-**Objection Handling (0-15):**
-- 0-3: Concerns dismissed or ignored
-- 4-7: Basic acknowledgment, weak responses
-- 8-11: Good handling with empathy
-- 12-15: Excellent handling with empathy, solutions, and success stories
-
-**Closing Technique (0-15):**
-- 0-3: No close or very weak
-- 4-7: Vague next steps
-- 8-11: Clear next steps
-- 12-15: "Powerfully invite" used, clear commitments, decisive
-
-**Iron Lady Parameters (each 0-10):**
-- 0-3: Not mentioned or very weak
-- 4-6: Mentioned briefly or basic
-- 7-8: Good usage with context
-- 9-10: Excellent usage, specific, impactful
-
-**CRITICAL REQUIREMENTS:**
-1. Principles Usage: If NO principles mentioned by name = max 3 points
-2. Case Studies Usage: If NO specific names mentioned = max 4 points
-3. BHAG Fine Tuning: If BHAG not explored = max 4 points
-4. Commitment Getting: If NO explicit commitments = max 4 points
-
-Provide comprehensive analysis in this JSON format:
-
-{{
-    "overall_score": <number 0-100>,
-    "methodology_compliance": <number 0-100>,
-    "call_effectiveness": "<Excellent/Good/Average/Needs Improvement>",
+        if percentage >= 80:
+            strengths.append(f"Strong {param_name} ({score}/{max_score})")
+            best_moments.append(f"Excellent execution of {param_name}")
+        elif percentage < 50:
+            critical_gaps.append(f"Weak {param_name} - scored only {score}/{max_score}")
+            missed_opportunities.append(f"Need to improve {param_name} significantly")
     
-    "core_dimensions": {{
-        "rapport_building": <0-20>,
-        "needs_discovery": <0-25>,
-        "solution_presentation": <0-25>,
-        "objection_handling": <0-15>,
-        "closing_technique": <0-15>
-    }},
-    
-    "iron_lady_parameters": {{
-        "profile_understanding": <0-10>,
-        "credibility_building": <0-10>,
-        "principles_usage": <0-10>,
-        "case_studies_usage": <0-10>,
-        "gap_creation": <0-10>,
-        "bhag_fine_tuning": <0-10>,
-        "urgency_creation": <0-10>,
-        "commitment_getting": <0-10>,
-        "contextualisation": <0-10>,
-        "excitement_creation": <0-10>
-    }},
-    
-    "key_insights": {{
-        "strengths": ["strength1", "strength2", "strength3"],
-        "critical_gaps": ["gap1", "gap2", "gap3"],
-        "missed_opportunities": ["opportunity1", "opportunity2", "opportunity3"],
-        "best_moments": ["moment1", "moment2", "moment3"]
-    }},
-    
-    "outcome_prediction": {{
-        "likely_result": "<registration_expected/follow_up_needed/needs_improvement>",
-        "confidence": <0-100>,
-        "reasoning": "<explanation based on what was actually done in the call>"
-    }},
-    
-    "coaching_recommendations": [
-        "specific recommendation 1",
-        "specific recommendation 2",
-        "specific recommendation 3",
-        "specific recommendation 4"
-    ],
-    
-    "iron_lady_specific_coaching": [
-        "principles coaching point",
-        "case studies coaching point",
-        "bhag coaching point",
-        "commitment coaching point"
-    ],
-    
-    "call_summary": "<2-3 sentence objective summary based on actual call performance, not stated outcome>"
-}}
-
-**SCORING RULES (STANDARDIZED):**
-1. Overall Score = (Core Dimensions * 0.6) + (Iron Lady Parameters * 0.4)
-2. Methodology Compliance = (Sum of Iron Lady Parameters / 100) * 100
-3. Call Effectiveness:
-   - 85-100: Excellent
-   - 70-84: Good
-   - 50-69: Average
-   - 0-49: Needs Improvement
-4. Outcome Prediction based on actual performance:
-   - registration_expected: Overall Score ≥ 80 AND Commitment Getting ≥ 7 AND BHAG Fine Tuning ≥ 7
-   - follow_up_needed: Overall Score 60-79 OR missing key commitments
-   - needs_improvement: Overall Score < 60
-
-Analyze objectively based on what {rm_name} actually did in this {call_type}, not on the stated outcome.
-"""
-
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a professional Iron Lady sales call analyst. Analyze calls objectively based only on actual content and context provided. Do not let stated outcomes bias your analysis. Always respond with valid JSON only. Be consistent in scoring - same content should always get same scores."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3  # Lower temperature for more consistent results
-        )
+    # Analyze IL parameters
+    for param, score in il_params.items():
+        percentage = (score / 10) * 100
+        param_name = param.replace('_', ' ').title()
         
-        analysis_text = response.choices[0].message.content
-        
-        # Extract JSON from response
-        if "```json" in analysis_text:
-            analysis_text = analysis_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in analysis_text:
-            analysis_text = analysis_text.split("```")[1].split("```")[0].strip()
-        
-        analysis = json.loads(analysis_text)
-        return analysis
-        
-    except Exception as e:
-        st.error(f"Error analyzing call: {str(e)}")
-        return {
-            "overall_score": 50.0,
-            "methodology_compliance": 45.0,
-            "call_effectiveness": "Needs Improvement",
-            "core_dimensions": {
-                "rapport_building": 10,
-                "needs_discovery": 12,
-                "solution_presentation": 12,
-                "objection_handling": 8,
-                "closing_technique": 8
-            },
-            "iron_lady_parameters": {
-                "profile_understanding": 5,
-                "credibility_building": 4,
-                "principles_usage": 3,
-                "case_studies_usage": 4,
-                "gap_creation": 4,
-                "bhag_fine_tuning": 5,
-                "urgency_creation": 5,
-                "commitment_getting": 4,
-                "contextualisation": 5,
-                "excitement_creation": 5
-            },
-            "key_insights": {
-                "strengths": ["Professional approach"],
-                "critical_gaps": ["API error - unable to analyze"],
-                "missed_opportunities": ["Please check API configuration"],
-                "best_moments": ["Unable to determine"]
-            },
-            "outcome_prediction": {
-                "likely_result": "needs_improvement",
-                "confidence": 50,
-                "reasoning": "Analysis unavailable due to API error"
-            },
-            "coaching_recommendations": ["Check API configuration", "Re-upload for analysis"],
-            "iron_lady_specific_coaching": ["API error prevented detailed analysis"],
-            "call_summary": "Analysis unavailable. Please check OpenAI API configuration."
-        }
+        if percentage >= 80:
+            strengths.append(f"Strong {param_name} ({score}/10)")
+        elif percentage < 50:
+            critical_gaps.append(f"Weak {param_name} - scored only {score}/10")
+            missed_opportunities.append(f"Leverage {param_name} more effectively")
+    
+    # Ensure we have at least some insights
+    if not strengths:
+        strengths = ["Some positive elements present", "Foundation established", "Room for significant growth"]
+    if not critical_gaps:
+        critical_gaps = ["Minor improvements needed", "Fine-tune execution", "Enhance consistency"]
+    if not missed_opportunities:
+        missed_opportunities = ["Optimize timing", "Deepen engagement", "Strengthen follow-through"]
+    if not best_moments:
+        best_moments = ["Professional approach maintained", "Key points covered", "Participant engaged"]
+    
+    # Generate coaching recommendations
+    coaching_recommendations = []
+    il_coaching = []
+    
+    # Focus on lowest scoring areas
+    sorted_core = sorted(core_dims.items(), key=lambda x: x[1])
+    sorted_il = sorted(il_params.items(), key=lambda x: x[1])
+    
+    for param, score in sorted_core[:2]:
+        max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][param]["weight"]
+        if score < max_score * 0.7:
+            coaching_recommendations.append(
+                f"Focus on improving {param.replace('_', ' ').title()} - currently at {score}/{max_score}"
+            )
+    
+    for param, score in sorted_il[:3]:
+        if score < 7:
+            il_coaching.append(
+                f"Strengthen {param.replace('_', ' ').title()} - aim for 8+/10 (currently {score}/10)"
+            )
+    
+    # Add call-type specific coaching
+    focus_areas = CALL_TYPE_FOCUS.get(call_type, [])
+    for area in focus_areas[:2]:
+        if area in il_params and il_params[area] < 7:
+            il_coaching.append(
+                f"Critical for {call_type}: Improve {area.replace('_', ' ').title()}"
+            )
+    
+    # Ensure minimum recommendations
+    if not coaching_recommendations:
+        coaching_recommendations = [
+            "Maintain current strengths",
+            "Focus on consistency across all parameters",
+            "Continue professional approach"
+        ]
+    
+    if not il_coaching:
+        il_coaching = [
+            "Integrate more 27 Principles references",
+            "Use specific case studies with names",
+            "Deepen BHAG exploration",
+            "Get explicit commitments"
+        ]
+    
+    # Outcome prediction
+    if overall_score >= 80 and il_params.get('commitment_getting', 0) >= 7 and il_params.get('bhag_fine_tuning', 0) >= 7:
+        likely_result = "registration_expected"
+        confidence = min(95, int(overall_score + 10))
+        reasoning = "Strong overall performance with key commitments secured"
+    elif overall_score >= 60:
+        likely_result = "follow_up_needed"
+        confidence = min(80, int(overall_score))
+        reasoning = "Good foundation established, needs follow-up to secure commitment"
+    else:
+        likely_result = "needs_improvement"
+        confidence = min(70, int(overall_score - 10))
+        reasoning = "Significant gaps in methodology execution require attention"
+    
+    # Generate call summary
+    summary = f"Call scored {overall_score:.1f}/100 with {methodology_compliance:.1f}% Iron Lady compliance. "
+    if effectiveness == "Excellent":
+        summary += "Outstanding execution across all parameters with strong methodology adherence."
+    elif effectiveness == "Good":
+        summary += "Solid performance with good methodology implementation and room for refinement."
+    elif effectiveness == "Average":
+        summary += "Acceptable execution but significant opportunities for improvement in key areas."
+    else:
+        summary += "Performance below standards - immediate coaching and practice required."
+    
+    return {
+        "overall_score": round(overall_score, 1),
+        "methodology_compliance": round(methodology_compliance, 1),
+        "call_effectiveness": effectiveness,
+        "core_dimensions": core_dims,
+        "iron_lady_parameters": il_params,
+        "key_insights": {
+            "strengths": strengths[:5],
+            "critical_gaps": critical_gaps[:5],
+            "missed_opportunities": missed_opportunities[:5],
+            "best_moments": best_moments[:5]
+        },
+        "outcome_prediction": {
+            "likely_result": likely_result,
+            "confidence": confidence,
+            "reasoning": reasoning
+        },
+        "coaching_recommendations": coaching_recommendations[:6],
+        "iron_lady_specific_coaching": il_coaching[:6],
+        "call_summary": summary
+    }
 
 # Sidebar navigation
 st.sidebar.title("👩‍💼 Iron Lady Call Analysis")
-st.sidebar.markdown("**Advanced AI-Powered Analysis**")
+st.sidebar.markdown("**Parameter-Based Analysis**")
 st.sidebar.markdown("*Based on 27 Principles Framework*")
-page = st.sidebar.radio("Navigate", ["Upload Recording", "Dashboard", "Admin View", "Parameters Guide"])
+page = st.sidebar.radio("Navigate", ["Upload & Score", "Dashboard", "Admin View", "Parameters Guide"])
 
 # PARAMETERS GUIDE PAGE
 if page == "Parameters Guide":
@@ -391,6 +329,25 @@ if page == "Parameters Guide":
             with st.expander(f"**{param.replace('_', ' ').title()}** ({details['weight']} points)"):
                 st.write(f"**Description:** {details['description']}")
                 st.write(f"**Weight:** {details['weight']} points")
+                
+                # Scoring guide
+                st.markdown("**Scoring Guide:**")
+                weight = details['weight']
+                if param == "rapport_building":
+                    st.write(f"• 0-{int(weight*0.25)}: No greeting, cold, transactional")
+                    st.write(f"• {int(weight*0.25)+1}-{int(weight*0.5)}: Basic greeting, minimal warmth")
+                    st.write(f"• {int(weight*0.5)+1}-{int(weight*0.75)}: Good greeting, some personalization")
+                    st.write(f"• {int(weight*0.75)+1}-{weight}: Excellent greeting, high empathy, strong relatedness")
+                elif param == "needs_discovery":
+                    st.write(f"• 0-{int(weight*0.24)}: 0-2 questions asked")
+                    st.write(f"• {int(weight*0.24)+1}-{int(weight*0.48)}: 3-4 basic questions")
+                    st.write(f"• {int(weight*0.48)+1}-{int(weight*0.72)}: 5-7 strategic questions")
+                    st.write(f"• {int(weight*0.72)+1}-{weight}: 8+ strategic questions with deep BHAG exploration")
+                elif param == "solution_presentation":
+                    st.write(f"• 0-{int(weight*0.24)}: Program barely mentioned")
+                    st.write(f"• {int(weight*0.24)+1}-{int(weight*0.48)}: Basic program mention")
+                    st.write(f"• {int(weight*0.48)+1}-{int(weight*0.72)}: Good explanation with benefits")
+                    st.write(f"• {int(weight*0.72)+1}-{weight}: Comprehensive presentation with social proof")
     
     with tab2:
         st.subheader("💎 Iron Lady Specific Parameters (100 points)")
@@ -398,6 +355,11 @@ if page == "Parameters Guide":
             with st.expander(f"**{param.replace('_', ' ').title()}** ({details['weight']} points)"):
                 st.write(f"**Description:** {details['description']}")
                 st.write(f"**Weight:** {details['weight']} points")
+                st.markdown("**Scoring Guide (0-10):**")
+                st.write("• 0-3: Not mentioned or very weak")
+                st.write("• 4-6: Mentioned briefly or basic")
+                st.write("• 7-8: Good usage with context")
+                st.write("• 9-10: Excellent usage, specific, impactful")
     
     with tab3:
         st.subheader("📋 Call Type Specific Focus Areas")
@@ -408,9 +370,9 @@ if page == "Parameters Guide":
                     st.write(f"• {param.replace('_', ' ').title()}")
 
 # UPLOAD PAGE
-elif page == "Upload Recording":
-    st.title("📤 Upload Call Recording")
-    st.write("Upload your Iron Lady sales call recording and get comprehensive AI-powered analysis")
+elif page == "Upload & Score":
+    st.title("📤 Upload Call & Score Parameters")
+    st.write("Upload your recording and score each parameter based on actual call performance")
     
     with st.form("upload_form"):
         col1, col2 = st.columns(2)
@@ -434,57 +396,83 @@ elif page == "Upload Recording":
         uploaded_file = st.file_uploader(
             "Upload Recording *",
             type=['mp3', 'wav', 'm4a', 'mp4'],
-            help="Supported formats: MP3, WAV, M4A, MP4 (Max 200MB)"
+            help="Supported formats: MP3, WAV, M4A, MP4 (Max 40MB)"
         )
         
         # Show relevant parameters for selected call type
-        st.markdown(f"### 📋 Key Focus Areas for {call_type}")
-        focus_params = CALL_TYPE_FOCUS.get(call_type, [])
-        st.info("✓ " + "\n✓ ".join([p.replace('_', ' ').title() for p in focus_params[:5]]) + "\n... and more")
+        st.markdown(f"### 📋 Score Parameters for {call_type}")
+        st.info(f"💡 Focus on: {', '.join([p.replace('_', ' ').title() for p in CALL_TYPE_FOCUS.get(call_type, [])[:5]])}")
         
-        additional_context = st.text_area(
-            "Call Context & Notes * (Be Detailed for Accurate Analysis)",
-            placeholder="""⚠️ IMPORTANT: Analysis is based on this context, not the outcome field. Be specific!
-
-Example:
-Participant's BHAG: Launch ₹50 lakh/year coaching practice in 12 months
-Current Situation: Running small yoga classes, 15 students, ₹30k/month
-
-What RM Actually Said/Did in the Call:
-- Greeted warmly, used participant's name 5+ times
-- Asked 8 strategic questions about challenges and goals
-- Discussed "Differentiate Branding" and "Shameless Pitching" principles in detail
-- Shared Neha's case study (Big 4 Partner) and Rashmi's story
-- Created gap by highlighting missing network and pricing skills
-- Explored BHAG deeply, encouraged thinking bigger (₹1 crore target)
-- Explained 3-day program benefits and community value
-- Addressed time concern using efficiency principle
-- Created urgency about limited cohort spots
-- Got explicit commitment to attend Day 2 and Day 3
-- Used "Powerfully Invite" language in closing
-- Set clear next steps: Day 2 attendance and follow-up call
-
-Main Concerns Raised: Time management, pricing premium programs, lack of confidence
-How Concerns Were Handled: Shared time-saving strategies, pricing framework, confidence-building through community
-
-Key Moments: Participant got emotional about her dream, showed high enthusiasm by the end""",
-            height=200
-        )
+        st.markdown("---")
+        st.markdown("### 🎯 Core Quality Dimensions")
         
-        st.info("💡 **Tip:** The more detailed your context, the more accurate the analysis. Describe what was ACTUALLY said and done in the call.")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            rapport_building = st.slider(
+                "Rapport Building",
+                0, 20, 10,
+                help="Greetings, warmth, empathy, personalization (0-20)"
+            )
+            
+            needs_discovery = st.slider(
+                "Needs Discovery",
+                0, 25, 12,
+                help="Strategic questions, understanding challenges and BHAG (0-25)"
+            )
+            
+            solution_presentation = st.slider(
+                "Solution Presentation",
+                0, 25, 12,
+                help="Program benefits, community value, outcomes (0-25)"
+            )
+        
+        with col2:
+            objection_handling = st.slider(
+                "Objection Handling",
+                0, 15, 8,
+                help="Concern handling with empathy and solutions (0-15)"
+            )
+            
+            closing_technique = st.slider(
+                "Closing Technique",
+                0, 15, 8,
+                help="Powerful invite, next steps, commitment (0-15)"
+            )
+        
+        st.markdown("---")
+        st.markdown("### 💎 Iron Lady Specific Parameters")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            profile_understanding = st.slider("Profile Understanding", 0, 10, 5, help="Experience, role, challenges, goals")
+            credibility_building = st.slider("Credibility Building", 0, 10, 5, help="Iron Lady community, success stories")
+            principles_usage = st.slider("27 Principles Usage", 0, 10, 5, help="Principles mentioned by name")
+            case_studies_usage = st.slider("Case Studies Usage", 0, 10, 5, help="Specific success stories with names")
+        
+        with col2:
+            gap_creation = st.slider("Gap Creation", 0, 10, 5, help="Highlighting what's missing for BHAG")
+            bhag_fine_tuning = st.slider("BHAG Fine Tuning", 0, 10, 5, help="Making them dream bigger")
+            urgency_creation = st.slider("Urgency Creation", 0, 10, 5, help="Limited spots, immediate action")
+            commitment_getting = st.slider("Commitment Getting", 0, 10, 5, help="Explicit commitments obtained")
+        
+        with col3:
+            contextualisation = st.slider("Contextualisation", 0, 10, 5, help="Personalizing to their situation")
+            excitement_creation = st.slider("Excitement Creation", 0, 10, 5, help="Creating enthusiasm about journey")
         
         notes = st.text_area(
             "Additional Notes (Optional)",
             placeholder="Any specific observations during the call..."
         )
         
-        submitted = st.form_submit_button("🚀 Analyze Call", use_container_width=True)
+        submitted = st.form_submit_button("🚀 Generate Analysis", use_container_width=True)
     
     if submitted:
-        if not all([rm_name, client_name, uploaded_file, additional_context]):
+        if not all([rm_name, client_name, uploaded_file]):
             st.error("❌ Please fill in all required fields (*)")
         else:
-            with st.spinner(f"🔄 Analyzing your {call_type}... This may take 30-60 seconds..."):
+            with st.spinner(f"🔄 Analyzing your {call_type}..."):
                 # Save uploaded file
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 file_extension = uploaded_file.name.split('.')[-1]
@@ -494,15 +482,26 @@ Key Moments: Participant got emotional about her dream, showed high enthusiasm b
                 with open(file_path, 'wb') as f:
                     f.write(uploaded_file.getbuffer())
                 
-                # Analyze with GPT
-                analysis = analyze_call_with_gpt(
-                    str(file_path),
-                    rm_name,
-                    client_name,
-                    pitch_outcome,
-                    call_type,
-                    additional_context
-                )
+                # Analyze based on parameters
+                scores_dict = {
+                    "rapport_building": rapport_building,
+                    "needs_discovery": needs_discovery,
+                    "solution_presentation": solution_presentation,
+                    "objection_handling": objection_handling,
+                    "closing_technique": closing_technique,
+                    "profile_understanding": profile_understanding,
+                    "credibility_building": credibility_building,
+                    "principles_usage": principles_usage,
+                    "case_studies_usage": case_studies_usage,
+                    "gap_creation": gap_creation,
+                    "bhag_fine_tuning": bhag_fine_tuning,
+                    "urgency_creation": urgency_creation,
+                    "commitment_getting": commitment_getting,
+                    "contextualisation": contextualisation,
+                    "excitement_creation": excitement_creation
+                }
+                
+                analysis = analyze_call_parameters(scores_dict, call_type)
                 
                 # Save to database
                 db = load_db()
@@ -517,7 +516,6 @@ Key Moments: Participant got emotional about her dream, showed high enthusiasm b
                     "uploaded_at": datetime.now().isoformat(),
                     "file_path": str(file_path),
                     "file_name": uploaded_file.name,
-                    "additional_context": additional_context,
                     "notes": notes,
                     "analysis": analysis
                 }
@@ -538,7 +536,6 @@ Key Moments: Participant got emotional about her dream, showed high enthusiasm b
                 with col3:
                     st.metric("Effectiveness", analysis['call_effectiveness'])
                 with col4:
-                    outcome_emoji = {"registration_expected": "🎉", "follow_up_needed": "📞", "needs_improvement": "⚠️"}
                     st.metric("Prediction", analysis['outcome_prediction']['likely_result'].replace('_', ' ').title())
                 
                 st.markdown("**Executive Summary:**")
@@ -549,7 +546,7 @@ Key Moments: Participant got emotional about her dream, showed high enthusiasm b
                 core_dims = analysis.get('core_dimensions', {})
                 if core_dims:
                     core_df = pd.DataFrame([
-                        {"Dimension": k.replace('_', ' ').title(), "Score": v, "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"]}
+                        {"Dimension": k.replace('_', ' ').title(), "Score": v, "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"], "Percentage": f"{(v/IRON_LADY_PARAMETERS['Core Quality Dimensions'][k]['weight']*100):.1f}%"}
                         for k, v in core_dims.items()
                     ])
                     st.dataframe(core_df, use_container_width=True, hide_index=True)
@@ -559,7 +556,7 @@ Key Moments: Participant got emotional about her dream, showed high enthusiasm b
                 il_params = analysis.get('iron_lady_parameters', {})
                 if il_params:
                     il_df = pd.DataFrame([
-                        {"Parameter": k.replace('_', ' ').title(), "Score": v, "Max": 10}
+                        {"Parameter": k.replace('_', ' ').title(), "Score": v, "Max": 10, "Percentage": f"{(v/10*100):.1f}%"}
                         for k, v in il_params.items()
                     ])
                     st.dataframe(il_df, use_container_width=True, hide_index=True)
@@ -831,7 +828,7 @@ elif page == "Admin View":
             
             param_avg = {param: (param_totals[param] / param_counts[param]) for param in param_totals}
             
-            if param_avg:  # Only show if we have data
+            if param_avg:
                 param_df = pd.DataFrame([
                     {
                         "Parameter": param.replace('_', ' ').title(),
@@ -852,7 +849,7 @@ elif page == "Admin View":
             st.markdown("---")
             st.subheader("🔍 Detailed Records")
             
-            for record in reversed(filtered_db[:10]):  # Show last 10 for performance
+            for record in reversed(filtered_db[:10]):
                 analysis = record.get('analysis', {})
                 with st.expander(
                     f"{record['rm_name']} - {record['call_type']} - {record['client_name']} ({record['call_date']}) "
@@ -881,21 +878,21 @@ elif page == "Admin View":
                     
                     st.write(f"**Summary:** {record['analysis'].get('call_summary', 'No summary available')}")
                     
-                    # Only show core dimensions if they exist
                     if 'core_dimensions' in record['analysis']:
                         st.write("**Core Dimensions:**")
                         for dim, score in record['analysis']['core_dimensions'].items():
                             max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][dim]["weight"]
-                            st.write(f"• {dim.replace('_', ' ').title()}: {score}/{max_score}")
+                            percentage = (score / max_score) * 100
+                            emoji = "🟢" if percentage >= 80 else "🟡" if percentage >= 60 else "🔴"
+                            st.write(f"{emoji} {dim.replace('_', ' ').title()}: {score}/{max_score} ({percentage:.0f}%)")
                     
-                    # Only show Iron Lady parameters if they exist
                     if 'iron_lady_parameters' in record['analysis']:
                         st.write("**Iron Lady Parameters:**")
                         for param, score in record['analysis']['iron_lady_parameters'].items():
-                            emoji = "🟢" if score >= 8 else "🟡" if score >= 6 else "🔴"
-                            st.write(f"{emoji} {param.replace('_', ' ').title()}: {score}/10")
+                            percentage = (score / 10) * 100
+                            emoji = "🟢" if percentage >= 80 else "🟡" if percentage >= 60 else "🔴"
+                            st.write(f"{emoji} {param.replace('_', ' ').title()}: {score}/10 ({percentage:.0f}%)")
                     
-                    # Show insights if available
                     insights = record['analysis'].get('key_insights', {})
                     if insights.get('strengths'):
                         st.write("**Strengths:**")
@@ -907,7 +904,6 @@ elif page == "Admin View":
                         for g in insights['critical_gaps']:
                             st.write(f"✗ {g}")
                     
-                    # Show recommendations if available
                     if 'coaching_recommendations' in record['analysis']:
                         st.write("**Coaching Recommendations:**")
                         for r in record['analysis']['coaching_recommendations']:
@@ -920,7 +916,7 @@ elif page == "Admin View":
 
 # Footer
 st.sidebar.markdown("---")
-st.sidebar.info("💡 **Tip:** Focus on Iron Lady Compliance score to master the methodology!")
+st.sidebar.info("💡 **Tip:** Score parameters honestly based on actual call performance!")
 st.sidebar.markdown("**Iron Lady Framework**")
 st.sidebar.markdown("• 27 Principles")
 st.sidebar.markdown("• BHAG Focus")
