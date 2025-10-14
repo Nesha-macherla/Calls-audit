@@ -271,6 +271,11 @@ CALL_TYPE_FOCUS = {
     ]
 }
 
+# Create data directory for database only (not for uploads)
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+DB_FILE = DATA_DIR / "calls_database.json"
+
 # Initialize database
 def init_db():
     if not DB_FILE.exists():
@@ -468,7 +473,7 @@ Analyze objectively based on what {rm_name} actually did in this {call_type}, no
             ],
             temperature=0.3  # Lower temperature for more consistent results
         )
-                    
+        )        
         analysis_text = response.choices[0].message.content
         
         # Extract JSON from response
@@ -664,8 +669,10 @@ Key Moments: Participant got emotional about her dream, showed high enthusiasm b
                     "call_date": str(call_date),
                     "call_duration": call_duration,
                     "uploaded_at": datetime.now().isoformat(),
-                    "file_path": str(file_path),
+                    "file_path": s3_url,  # S3 URL
                     "file_name": uploaded_file.name,
+                    "storage_type": "s3",  # Track storage type
+                    "expires_at": (datetime.now().timestamp() + (7 * 24 * 60 * 60)),  # 7 days from now
                     "additional_context": additional_context,
                     "notes": notes,
                     "analysis": analysis
@@ -1066,6 +1073,21 @@ elif page == "Admin View":
                             st.write(f"💎 {r}")
 
 # Footer
+st.sidebar.markdown("---")
+
+# S3 Storage Status
+st.sidebar.markdown("### 📦 Storage Status")
+try:
+    stats = get_s3_stats()
+    if stats:
+        st.sidebar.success("**AWS S3 Connected** ✅")
+        st.sidebar.info(f"**Files:** {stats['files']}\n**Size:** {stats['size']}")
+        st.sidebar.caption("🗑️ Auto-delete after 7 days")
+    else:
+        st.sidebar.warning("S3 stats unavailable")
+except:
+    st.sidebar.error("S3 not configured")
+
 st.sidebar.markdown("---")
 st.sidebar.info("💡 **Tip:** Focus on Iron Lady Compliance score to master the methodology!")
 st.sidebar.markdown("**Iron Lady Framework**")
