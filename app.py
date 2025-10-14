@@ -5,6 +5,8 @@ import os
 from datetime import datetime
 import openai
 from pathlib import Path
+import boto3
+from botocore.exceptions import ClientError
 
 # Page configuration
 st.set_page_config(
@@ -16,14 +18,161 @@ st.set_page_config(
 # Initialize OpenAI client
 openai.api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
 
-# Create data directory if it doesn't exist
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
-UPLOADS_DIR = DATA_DIR / "uploads"
-UPLOADS_DIR.mkdir(exist_ok=True)
-DB_FILE = DATA_DIR / "calls_database.json"
+# Initialize S3 client
+def get_s3_client():
+    """Initialize and return S3 client"""
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=st.secrets.get("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID")),
+            aws_secret_access_key=st.secrets.get("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY")),
+            region_name=st.secrets.get("AWS_S3_REGION", os.getenv("AWS_S3_REGION", "ap-south-1"))
+        )
+        return s3_client
+    except Exception as e:
+        st.error(f"Failed to initialize S3 client: {str(e)}")
+        return None
 
-# Iron Lady Specific Parameters
+def get_bucket_name():
+    """Get S3 bucket name from secrets"""
+    return st.secrets.get("AWS_S3_BUCKET_NAME", os.getenv("AWS_S3_BUCKET_NAME"))
+
+def upload_to_s3(file_obj, file_name, metadata=None):
+    """
+    Upload file to S3 with automatic 7-day expiration
+    
+    Args:
+        file_obj: File object to upload
+        file_name: Name for the file in S3
+        metadata: Optional metadata dictionary
+    
+    Returns:
+        str: S3 URL of uploaded file or None if failed
+    """
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        st.error("❌ S3 configuration missing")
+        return None
+    
+    try:
+        # Create folder structure: recordings/YYYY/MM/DD/filename
+        date_path = datetime.now().strftime("%Y/%m/%d")
+        s3_key = f"recordings/{date_path}/{file_name}"
+        
+        # Get content type
+        extension = Path(file_name).suffix.lower()
+        content_types = {
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.m4a': 'audio/mp4',
+            '.mp4': 'video/mp4'
+        }
+        content_type = content_types.get(extension, 'application/octet-stream')
+        
+        # Prepare metadata
+        extra_args = {
+            'ContentType': content_type,
+            'ServerSideEncryption': 'AES256'  # Enable encryption
+        }
+        
+        if metadata:
+            extra_args['Metadata'] = {k: str(v) for k, v in metadata.items()}
+        
+        # Upload file
+        file_obj.seek(0)  # Reset file pointer
+        s3_client.upload_fileobj(
+            file_obj,
+            bucket_name,
+            s3_key,
+            ExtraArgs=extra_args
+        )
+        
+        # Return S3 URL
+        s3_url = f"s3://{bucket_name}/{s3_key}"
+        return s3_url
+        
+    except Exception as e:
+        st.error(f"❌ S3 upload failed: {str(e)}")
+        return None
+
+def setup_s3_lifecycle():
+    """
+    Set up S3 lifecycle rule to automatically delete files after 7 days
+    This only needs to be run once
+    """
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        return False
+    
+    try:
+        lifecycle_config = {
+            'Rules': [
+                {
+                    'Id': 'DeleteAfter7Days',
+                    'Status': 'Enabled',
+                    'Prefix': 'recordings/',
+                    'Expiration': {
+                        'Days': 7
+                    }
+                }
+            ]
+        }
+        
+        s3_client.put_bucket_lifecycle_configuration(
+            Bucket=bucket_name,
+            LifecycleConfiguration=lifecycle_config
+        )
+        
+        return True
+        
+    except Exception as e:
+        st.warning(f"Lifecycle setup: {str(e)}")
+        return False
+
+def get_s3_stats():
+    """Get S3 bucket statistics"""
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        return None
+    
+    try:
+        response = s3_client.list_objects_v2(
+            Bucket=bucket_name,
+            Prefix='recordings/'
+        )
+        
+        total_size = 0
+        file_count = 0
+        
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                total_size += obj['Size']
+                file_count += 1
+        
+        # Convert to MB/GB
+        size_mb = total_size / (1024 * 1024)
+        size_gb = size_mb / 1024
+        
+        if size_gb > 1:
+            size_str = f"{size_gb:.2f} GB"
+        else:
+            size_str = f"{size_mb:.2f} MB"
+        
+        return {
+            'size': size_str,
+            'files': file_count
+        }
+        
+    except Exception as e:
+        return None
+
+# Iron Lady Specific Parameters from the advanced analyzer
 IRON_LADY_PARAMETERS = {
     "Core Quality Dimensions": {
         "rapport_building": {
@@ -137,70 +286,113 @@ def save_db(data):
     with open(DB_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
-def delete_record(record_id):
-    """Delete a record from the database"""
-    db = load_db()
-    db = [r for r in db if r['id'] != record_id]
-    save_db(db)
-    return True
-
-def analyze_call_with_gpt(call_type, additional_context, manual_scores=None):
-    """
-    Hybrid analysis: Uses GPT for insights but allows manual score override
-    If manual_scores provided, uses those; otherwise GPT analyzes
-    """
+def analyze_call_with_gpt(file_path, rm_name, client_name, pitch_outcome, call_type, additional_context):
+    """Analyze call recording using ChatGPT API with comprehensive Iron Lady parameters"""
     try:
-        # If manual scores provided, use them directly
-        if manual_scores:
-            return generate_analysis_from_scores(manual_scores, call_type, "Manual scoring with GPT-generated insights")
-        
-        # Otherwise, use GPT to analyze
+        # Get focus areas for this call type
         focus_areas = CALL_TYPE_FOCUS.get(call_type, [])
         focus_params = [param for param in focus_areas]
         
-        prompt = f"""You are an expert Iron Lady sales call analyst. Analyze this {call_type} and provide scores.
+        prompt = f"""
+You are an expert Iron Lady sales call analyst. Analyze this {call_type} objectively based ONLY on the call content and context provided.
 
-**CALL CONTEXT:**
-{additional_context}
+**CALL DETAILS:**
+- Relationship Manager: {rm_name}
+- Participant Name: {client_name}
+- Call Type: {call_type}
+- Call Context & Content: {additional_context}
 
-**CRITICAL: You must provide REALISTIC scores based on the actual content described. Do NOT give default 50% scores.**
+**IMPORTANT ANALYSIS INSTRUCTIONS:**
+1. Base your analysis ONLY on the actual call content described in the context
+2. Be objective - do not let the stated outcome influence your scoring
+3. Score each parameter independently based on what was actually said/done
+4. The outcome "{pitch_outcome}" is for reference only - analyze what actually happened in the call
+5. If specific information is missing from context, score conservatively but fairly
 
-**SCORING INSTRUCTIONS:**
+**IRON LADY METHODOLOGY FRAMEWORK:**
 
-**CORE DIMENSIONS:**
-1. Rapport Building (0-20): Did they use names, show warmth, build connection?
-2. Needs Discovery (0-25): How many strategic questions? Did they explore BHAG deeply?
-3. Solution Presentation (0-25): Did they explain program benefits, community, outcomes?
-4. Objection Handling (0-15): How well did they address concerns?
-5. Closing Technique (0-15): Did they use "powerfully invite" and get commitments?
+**1. CORE QUALITY DIMENSIONS (Total: 100 points)**
+   - Rapport Building (0-20): Greetings, warmth, empathy, personalization, relatedness
+   - Needs Discovery (0-25): Strategic questions, understanding challenges and BHAG
+   - Solution Presentation (0-25): Program benefits, community value, outcomes
+   - Objection Handling (0-15): Concern handling with empathy and solutions
+   - Closing Technique (0-15): Powerful invite, next steps, commitment
 
-**IRON LADY PARAMETERS (each 0-10):**
-1. Profile Understanding: Did they understand background, role, goals?
-2. Credibility Building: Did they mention Iron Lady community, success stories?
-3. Principles Usage: Did they mention ANY of the 27 Principles by name?
-4. Case Studies Usage: Did they mention specific participant names (Neha, Rashmi, etc.)?
-5. Gap Creation: Did they highlight what's missing to achieve BHAG?
-6. BHAG Fine Tuning: Did they explore and expand the BHAG?
-7. Urgency Creation: Did they create FOMO, mention limited spots?
-8. Commitment Getting: Did they get explicit commitments?
-9. Contextualisation: Did they personalize to the participant's situation?
-10. Excitement Creation: Did they generate enthusiasm?
+**2. IRON LADY SPECIFIC PARAMETERS (Total: 100 points)**
+   - Profile Understanding (0-10): Experience, role, challenges, goals
+   - Credibility Building (0-10): Iron Lady community, success stories, mentors
+   - Principles Usage (0-10): 27 Principles framework (Unpredictable Behaviour, 10000 Hours, Differentiate Branding, Shameless Pitching, Art of Negotiation, Contextualisation)
+   - Case Studies Usage (0-10): Success stories (Neha, Rashmi, Chandana, Annapurna, Pushpalatha, Tejaswini)
+   - Gap Creation (0-10): Highlighting what's missing to achieve BHAG
+   - BHAG Fine Tuning (0-10): Making them dream bigger, breakthrough goals
+   - Urgency Creation (0-10): Limited spots, immediate action, FOMO
+   - Commitment Getting (0-10): Explicit commitments for attendance and participation
+   - Contextualisation (0-10): Personalizing to participant's situation
+   - Excitement Creation (0-10): Enthusiasm about transformation journey
 
-**SCORING RULES:**
-- If something was NOT done or mentioned → Score 0-3
-- If barely mentioned → Score 4-6
-- If done well → Score 7-8
-- If done excellently with specifics → Score 9-10
+**CRITICAL FOCUS FOR {call_type.upper()}:**
+{", ".join(focus_params)}
 
-**CRITICAL RULES:**
-- NO principles mentioned by name = MAX 3 points for Principles Usage
-- NO specific case study names = MAX 4 points for Case Studies Usage
-- NO BHAG exploration = MAX 4 points for BHAG Fine Tuning
-- NO explicit commitments = MAX 4 points for Commitment Getting
+**KEY IRON LADY CONCEPTS:**
+- BHAG = Big Hairy Audacious Goal (participant's major breakthrough goal)
+- 27 Principles = Core framework (Unpredictable Behaviour, 10000 Hours, Differentiate Branding, Maximize, Shameless Pitching, Art of Negotiation, Contextualisation, etc.)
+- Community = Network of successful women entrepreneurs and leaders
+- 3-Day Program = Day 1 & 2 (Workshop), Day 3 (Follow-up session)
+- Certification = Program completion credential
+- Brand Statement = Personal branding exercise
+- Case Studies = Success stories from participants like Neha (Big 4 Partner), Rashmi (Senior Leader), Chandana (Entrepreneur), Annapurna, Pushpalatha, Tejaswini
 
-Respond ONLY with this JSON format (no other text):
+**STANDARDIZED SCORING CRITERIA:**
+
+**Rapport Building (0-20):**
+- 0-5: No greeting, cold, transactional
+- 6-10: Basic greeting, minimal warmth
+- 11-15: Good greeting, some personalization, warm tone
+- 16-20: Excellent greeting, name used multiple times, high empathy, strong relatedness
+
+**Needs Discovery (0-25):**
+- 0-6: 0-2 questions asked
+- 7-12: 3-4 basic questions
+- 13-18: 5-7 questions including some strategic ones
+- 19-25: 8+ strategic questions, deep BHAG exploration
+
+**Solution Presentation (0-25):**
+- 0-6: Program barely mentioned or explained
+- 7-12: Basic program mention, few benefits
+- 13-18: Good program explanation, 3-4 benefits covered
+- 19-25: Comprehensive presentation, all components (program, community, outcomes, social proof)
+
+**Objection Handling (0-15):**
+- 0-3: Concerns dismissed or ignored
+- 4-7: Basic acknowledgment, weak responses
+- 8-11: Good handling with empathy
+- 12-15: Excellent handling with empathy, solutions, and success stories
+
+**Closing Technique (0-15):**
+- 0-3: No close or very weak
+- 4-7: Vague next steps
+- 8-11: Clear next steps
+- 12-15: "Powerfully invite" used, clear commitments, decisive
+
+**Iron Lady Parameters (each 0-10):**
+- 0-3: Not mentioned or very weak
+- 4-6: Mentioned briefly or basic
+- 7-8: Good usage with context
+- 9-10: Excellent usage, specific, impactful
+
+**CRITICAL REQUIREMENTS:**
+1. Principles Usage: If NO principles mentioned by name = max 3 points
+2. Case Studies Usage: If NO specific names mentioned = max 4 points
+3. BHAG Fine Tuning: If BHAG not explored = max 4 points
+4. Commitment Getting: If NO explicit commitments = max 4 points
+
+Provide comprehensive analysis in this JSON format:
 
 {{
+    "overall_score": <number 0-100>,
+    "methodology_compliance": <number 0-100>,
+    "call_effectiveness": "<Excellent/Good/Average/Needs Improvement>",
+    
     "core_dimensions": {{
         "rapport_building": <0-20>,
         "needs_discovery": <0-25>,
@@ -208,6 +400,7 @@ Respond ONLY with this JSON format (no other text):
         "objection_handling": <0-15>,
         "closing_technique": <0-15>
     }},
+    
     "iron_lady_parameters": {{
         "profile_understanding": <0-10>,
         "credibility_building": <0-10>,
@@ -220,201 +413,119 @@ Respond ONLY with this JSON format (no other text):
         "contextualisation": <0-10>,
         "excitement_creation": <0-10>
     }},
-    "justification": "Brief explanation of scores based on what was actually done in the call"
+    
+    "key_insights": {{
+        "strengths": ["strength1", "strength2", "strength3"],
+        "critical_gaps": ["gap1", "gap2", "gap3"],
+        "missed_opportunities": ["opportunity1", "opportunity2", "opportunity3"],
+        "best_moments": ["moment1", "moment2", "moment3"]
+    }},
+    
+    "outcome_prediction": {{
+        "likely_result": "<registration_expected/follow_up_needed/needs_improvement>",
+        "confidence": <0-100>,
+        "reasoning": "<explanation based on what was actually done in the call>"
+    }},
+    
+    "coaching_recommendations": [
+        "specific recommendation 1",
+        "specific recommendation 2",
+        "specific recommendation 3",
+        "specific recommendation 4"
+    ],
+    
+    "iron_lady_specific_coaching": [
+        "principles coaching point",
+        "case studies coaching point",
+        "bhag coaching point",
+        "commitment coaching point"
+    ],
+    
+    "call_summary": "<2-3 sentence objective summary based on actual call performance, not stated outcome>"
 }}
+
+**SCORING RULES (STANDARDIZED):**
+1. Overall Score = (Core Dimensions * 0.6) + (Iron Lady Parameters * 0.4)
+2. Methodology Compliance = (Sum of Iron Lady Parameters / 100) * 100
+3. Call Effectiveness:
+   - 85-100: Excellent
+   - 70-84: Good
+   - 50-69: Average
+   - 0-49: Needs Improvement
+4. Outcome Prediction based on actual performance:
+   - registration_expected: Overall Score ≥ 80 AND Commitment Getting ≥ 7 AND BHAG Fine Tuning ≥ 7
+   - follow_up_needed: Overall Score 60-79 OR missing key commitments
+   - needs_improvement: Overall Score < 60
+
+Analyze objectively based on what {rm_name} actually did in this {call_type}, not on the stated outcome.
 """
 
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an expert call analyst. Provide realistic scores based on actual performance described. Never give default 50% scores. Be strict but fair."},
+                {"role": "system", "content": "You are a professional Iron Lady sales call analyst. Analyze calls objectively based only on actual content and context provided. Do not let stated outcomes bias your analysis. Always respond with valid JSON only. Be consistent in scoring - same content should always get same scores."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,
-            response_format={"type": "json_object"}
+            temperature=0.3  # Lower temperature for more consistent results
         )
-        
+        )        
         analysis_text = response.choices[0].message.content
-        scores_data = json.loads(analysis_text)
         
-        # Generate full analysis from GPT scores
-        return generate_analysis_from_scores(
-            scores_data.get('core_dimensions', {}),
-            call_type,
-            scores_data.get('justification', 'GPT analysis'),
-            scores_data.get('iron_lady_parameters', {})
-        )
+        # Extract JSON from response
+        if "```json" in analysis_text:
+            analysis_text = analysis_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in analysis_text:
+            analysis_text = analysis_text.split("```")[1].split("```")[0].strip()
+        
+        analysis = json.loads(analysis_text)
+        return analysis
         
     except Exception as e:
-        st.error(f"GPT Analysis Error: {str(e)}")
-        # Return neutral scores on error
-        return generate_analysis_from_scores({
-            "rapport_building": 10,
-            "needs_discovery": 12,
-            "solution_presentation": 12,
-            "objection_handling": 8,
-            "closing_technique": 8
-        }, call_type, f"Error in analysis: {str(e)}")
-
-def generate_analysis_from_scores(core_dims, call_type, justification, il_params=None):
-    """Generate complete analysis from scores"""
-    
-    # Ensure all core dimensions are present
-    core_dimensions = {
-        "rapport_building": core_dims.get("rapport_building", 10),
-        "needs_discovery": core_dims.get("needs_discovery", 12),
-        "solution_presentation": core_dims.get("solution_presentation", 12),
-        "objection_handling": core_dims.get("objection_handling", 8),
-        "closing_technique": core_dims.get("closing_technique", 8)
-    }
-    
-    # Ensure all IL parameters are present
-    if il_params is None:
-        il_params = {}
-    
-    iron_lady_parameters = {
-        "profile_understanding": il_params.get("profile_understanding", 5),
-        "credibility_building": il_params.get("credibility_building", 5),
-        "principles_usage": il_params.get("principles_usage", 5),
-        "case_studies_usage": il_params.get("case_studies_usage", 5),
-        "gap_creation": il_params.get("gap_creation", 5),
-        "bhag_fine_tuning": il_params.get("bhag_fine_tuning", 5),
-        "urgency_creation": il_params.get("urgency_creation", 5),
-        "commitment_getting": il_params.get("commitment_getting", 5),
-        "contextualisation": il_params.get("contextualisation", 5),
-        "excitement_creation": il_params.get("excitement_creation", 5)
-    }
-    
-    # Calculate scores
-    core_total = sum(core_dimensions.values())
-    il_total = sum(iron_lady_parameters.values())
-    
-    overall_score = (core_total * 0.6) + (il_total * 0.4)
-    methodology_compliance = il_total
-    
-    # Determine effectiveness
-    if overall_score >= 85:
-        effectiveness = "Excellent"
-    elif overall_score >= 70:
-        effectiveness = "Good"
-    elif overall_score >= 50:
-        effectiveness = "Average"
-    else:
-        effectiveness = "Needs Improvement"
-    
-    # Generate insights
-    strengths = []
-    critical_gaps = []
-    missed_opportunities = []
-    best_moments = []
-    
-    # Analyze core dimensions
-    for param, score in core_dimensions.items():
-        max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][param]["weight"]
-        percentage = (score / max_score) * 100
-        param_name = param.replace('_', ' ').title()
-        
-        if percentage >= 80:
-            strengths.append(f"Strong {param_name} - {score}/{max_score} ({percentage:.0f}%)")
-            best_moments.append(f"Excellent execution of {param_name}")
-        elif percentage < 50:
-            critical_gaps.append(f"Weak {param_name} - only {score}/{max_score} ({percentage:.0f}%)")
-            missed_opportunities.append(f"Significant improvement needed in {param_name}")
-    
-    # Analyze IL parameters
-    for param, score in iron_lady_parameters.items():
-        percentage = (score / 10) * 100
-        param_name = param.replace('_', ' ').title()
-        
-        if percentage >= 80:
-            strengths.append(f"Strong {param_name} - {score}/10")
-        elif percentage < 50:
-            critical_gaps.append(f"Weak {param_name} - only {score}/10")
-            missed_opportunities.append(f"Must improve {param_name}")
-    
-    # Ensure minimum insights
-    if not strengths:
-        strengths = ["Professional demeanor maintained", "Basic structure followed"]
-    if not critical_gaps:
-        critical_gaps = ["Fine-tune delivery", "Enhance engagement"]
-    if not missed_opportunities:
-        missed_opportunities = ["Deepen rapport", "Strengthen methodology"]
-    if not best_moments:
-        best_moments = ["Call completed professionally"]
-    
-    # Generate coaching
-    coaching_recommendations = []
-    il_coaching = []
-    
-    sorted_core = sorted(core_dimensions.items(), key=lambda x: x[1])
-    sorted_il = sorted(iron_lady_parameters.items(), key=lambda x: x[1])
-    
-    for param, score in sorted_core[:3]:
-        max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][param]["weight"]
-        if score < max_score * 0.7:
-            coaching_recommendations.append(
-                f"Priority: Improve {param.replace('_', ' ').title()} from {score}/{max_score} to at least {int(max_score*0.8)}/{max_score}"
-            )
-    
-    for param, score in sorted_il[:4]:
-        if score < 7:
-            il_coaching.append(
-                f"Focus: {param.replace('_', ' ').title()} needs work (current: {score}/10, target: 8+/10)"
-            )
-    
-    if not coaching_recommendations:
-        coaching_recommendations = ["Maintain current performance levels", "Continue professional approach"]
-    
-    if not il_coaching:
-        il_coaching = ["Integrate more 27 Principles", "Use specific case studies", "Deepen BHAG exploration"]
-    
-    # Outcome prediction
-    commit_score = iron_lady_parameters.get('commitment_getting', 0)
-    bhag_score = iron_lady_parameters.get('bhag_fine_tuning', 0)
-    
-    if overall_score >= 80 and commit_score >= 7 and bhag_score >= 7:
-        likely_result = "registration_expected"
-        confidence = min(95, int(overall_score + 5))
-        reasoning = f"Strong performance (score: {overall_score:.0f}/100) with solid commitments and BHAG work"
-    elif overall_score >= 60:
-        likely_result = "follow_up_needed"
-        confidence = min(80, int(overall_score - 5))
-        reasoning = f"Moderate performance (score: {overall_score:.0f}/100), follow-up required to secure commitment"
-    else:
-        likely_result = "needs_improvement"
-        confidence = min(70, int(overall_score - 15))
-        reasoning = f"Below standard performance (score: {overall_score:.0f}/100), significant improvement needed"
-    
-    # Generate summary
-    summary = f"{call_type} scored {overall_score:.1f}/100 with {methodology_compliance:.1f}% Iron Lady compliance. {justification}"
-    
-    return {
-        "overall_score": round(overall_score, 1),
-        "methodology_compliance": round(methodology_compliance, 1),
-        "call_effectiveness": effectiveness,
-        "core_dimensions": core_dimensions,
-        "iron_lady_parameters": iron_lady_parameters,
-        "key_insights": {
-            "strengths": strengths[:5],
-            "critical_gaps": critical_gaps[:5],
-            "missed_opportunities": missed_opportunities[:5],
-            "best_moments": best_moments[:5]
-        },
-        "outcome_prediction": {
-            "likely_result": likely_result,
-            "confidence": confidence,
-            "reasoning": reasoning
-        },
-        "coaching_recommendations": coaching_recommendations[:6],
-        "iron_lady_specific_coaching": il_coaching[:6],
-        "call_summary": summary
-    }
+        st.error(f"Error analyzing call: {str(e)}")
+        return {
+            "overall_score": 50.0,
+            "methodology_compliance": 45.0,
+            "call_effectiveness": "Needs Improvement",
+            "core_dimensions": {
+                "rapport_building": 10,
+                "needs_discovery": 12,
+                "solution_presentation": 12,
+                "objection_handling": 8,
+                "closing_technique": 8
+            },
+            "iron_lady_parameters": {
+                "profile_understanding": 5,
+                "credibility_building": 4,
+                "principles_usage": 3,
+                "case_studies_usage": 4,
+                "gap_creation": 4,
+                "bhag_fine_tuning": 5,
+                "urgency_creation": 5,
+                "commitment_getting": 4,
+                "contextualisation": 5,
+                "excitement_creation": 5
+            },
+            "key_insights": {
+                "strengths": ["Professional approach"],
+                "critical_gaps": ["API error - unable to analyze"],
+                "missed_opportunities": ["Please check API configuration"],
+                "best_moments": ["Unable to determine"]
+            },
+            "outcome_prediction": {
+                "likely_result": "needs_improvement",
+                "confidence": 50,
+                "reasoning": "Analysis unavailable due to API error"
+            },
+            "coaching_recommendations": ["Check API configuration", "Re-upload for analysis"],
+            "iron_lady_specific_coaching": ["API error prevented detailed analysis"],
+            "call_summary": "Analysis unavailable. Please check OpenAI API configuration."
+        }
 
 # Sidebar navigation
 st.sidebar.title("👩‍💼 Iron Lady Call Analysis")
-st.sidebar.markdown("**Hybrid GPT + Manual Analysis**")
+st.sidebar.markdown("**Advanced AI-Powered Analysis**")
 st.sidebar.markdown("*Based on 27 Principles Framework*")
-page = st.sidebar.radio("Navigate", ["Upload & Analyze", "Dashboard", "Admin View", "Parameters Guide"])
+page = st.sidebar.radio("Navigate", ["Upload Recording", "Dashboard", "Admin View", "Parameters Guide"])
 
 # PARAMETERS GUIDE PAGE
 if page == "Parameters Guide":
@@ -446,16 +557,9 @@ if page == "Parameters Guide":
                     st.write(f"• {param.replace('_', ' ').title()}")
 
 # UPLOAD PAGE
-elif page == "Upload & Analyze":
-    st.title("📤 Upload Call & Get AI Analysis")
-    st.write("Choose: Let GPT analyze OR manually score parameters")
-    
-    # Analysis mode selector
-    analysis_mode = st.radio(
-        "Analysis Mode:",
-        ["🤖 GPT Auto-Analysis (Recommended)", "✍️ Manual Scoring"],
-        horizontal=True
-    )
+elif page == "Upload Recording":
+    st.title("📤 Upload Call Recording")
+    st.write("Upload your Iron Lady sales call recording and get comprehensive AI-powered analysis")
     
     with st.form("upload_form"):
         col1, col2 = st.columns(2)
@@ -479,79 +583,58 @@ elif page == "Upload & Analyze":
         uploaded_file = st.file_uploader(
             "Upload Recording *",
             type=['mp3', 'wav', 'm4a', 'mp4'],
-            help="Supported formats: MP3, WAV, M4A, MP4 (Max 40MB)"
+            help="Supported formats: MP3, WAV, M4A, MP4 (Max 200MB)"
         )
         
-        st.markdown(f"### 📋 Key Focus for {call_type}")
+        # Show relevant parameters for selected call type
+        st.markdown(f"### 📋 Key Focus Areas for {call_type}")
         focus_params = CALL_TYPE_FOCUS.get(call_type, [])
-        st.info("✓ " + " • ".join([p.replace('_', ' ').title() for p in focus_params[:5]]))
+        st.info("✓ " + "\n✓ ".join([p.replace('_', ' ').title() for p in focus_params[:5]]) + "\n... and more")
         
-        # Context field for GPT mode
-        if "GPT" in analysis_mode:
-            additional_context = st.text_area(
-                "Call Summary & Key Details * (For GPT Analysis)",
-                placeholder="""Describe what happened in the call:
-- What questions were asked?
-- Which principles were mentioned (by name)?
-- Which case studies were shared (with names)?
-- Was BHAG explored? How deeply?
-- What commitments were obtained?
-- How were objections handled?
-- Was "powerfully invite" language used?
+        additional_context = st.text_area(
+            "Call Context & Notes * (Be Detailed for Accurate Analysis)",
+            placeholder="""⚠️ IMPORTANT: Analysis is based on this context, not the outcome field. Be specific!
 
 Example:
-"RM asked 8 questions about participant's business. Discussed 'Differentiate Branding' and 'Shameless Pitching' principles. Shared Neha's case study (Big 4 Partner). Explored BHAG deeply - participant wants ₹50L/year practice. Got commitment to attend Day 2 & 3. Used 'powerfully invite' in closing. Created urgency about limited cohort spots."
-""",
-                height=200
-            )
-        else:
-            additional_context = ""
-            st.info("💡 Manual mode: Score each parameter below based on call performance")
-            
-            st.markdown("### 🎯 Core Quality Dimensions")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                rapport_building = st.slider("Rapport Building", 0, 20, 10, help="0-20 points")
-                needs_discovery = st.slider("Needs Discovery", 0, 25, 12, help="0-25 points")
-                solution_presentation = st.slider("Solution Presentation", 0, 25, 12, help="0-25 points")
-            
-            with col2:
-                objection_handling = st.slider("Objection Handling", 0, 15, 8, help="0-15 points")
-                closing_technique = st.slider("Closing Technique", 0, 15, 8, help="0-15 points")
-            
-            st.markdown("### 💎 Iron Lady Parameters")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                profile_understanding = st.slider("Profile Understanding", 0, 10, 5)
-                credibility_building = st.slider("Credibility Building", 0, 10, 5)
-                principles_usage = st.slider("27 Principles Usage", 0, 10, 5)
-            
-            with col2:
-                case_studies_usage = st.slider("Case Studies Usage", 0, 10, 5)
-                gap_creation = st.slider("Gap Creation", 0, 10, 5)
-                bhag_fine_tuning = st.slider("BHAG Fine Tuning", 0, 10, 5)
-            
-            with col3:
-                urgency_creation = st.slider("Urgency Creation", 0, 10, 5)
-                commitment_getting = st.slider("Commitment Getting", 0, 10, 5)
-                contextualisation = st.slider("Contextualisation", 0, 10, 5)
-            
-            excitement_creation = st.slider("Excitement Creation", 0, 10, 5)
+Participant's BHAG: Launch ₹50 lakh/year coaching practice in 12 months
+Current Situation: Running small yoga classes, 15 students, ₹30k/month
+
+What RM Actually Said/Did in the Call:
+- Greeted warmly, used participant's name 5+ times
+- Asked 8 strategic questions about challenges and goals
+- Discussed "Differentiate Branding" and "Shameless Pitching" principles in detail
+- Shared Neha's case study (Big 4 Partner) and Rashmi's story
+- Created gap by highlighting missing network and pricing skills
+- Explored BHAG deeply, encouraged thinking bigger (₹1 crore target)
+- Explained 3-day program benefits and community value
+- Addressed time concern using efficiency principle
+- Created urgency about limited cohort spots
+- Got explicit commitment to attend Day 2 and Day 3
+- Used "Powerfully Invite" language in closing
+- Set clear next steps: Day 2 attendance and follow-up call
+
+Main Concerns Raised: Time management, pricing premium programs, lack of confidence
+How Concerns Were Handled: Shared time-saving strategies, pricing framework, confidence-building through community
+
+Key Moments: Participant got emotional about her dream, showed high enthusiasm by the end""",
+            height=200
+        )
         
-        notes = st.text_area("Additional Notes (Optional)", placeholder="Any observations...")
+        st.info("💡 **Tip:** The more detailed your context, the more accurate the analysis. Describe what was ACTUALLY said and done in the call.")
+        
+        notes = st.text_area(
+            "Additional Notes (Optional)",
+            placeholder="Any specific observations during the call..."
+        )
         
         submitted = st.form_submit_button("🚀 Analyze Call", use_container_width=True)
     
     if submitted:
-        if not all([rm_name, client_name, uploaded_file]):
-            st.error("❌ Please fill all required fields (*)")
-        elif "GPT" in analysis_mode and (not additional_context or len(additional_context.strip()) < 100):
-            st.error("❌ Please provide detailed call summary (minimum 100 characters) for GPT analysis")
+        if not all([rm_name, client_name, uploaded_file, additional_context]):
+            st.error("❌ Please fill in all required fields (*)")
         else:
-            with st.spinner(f"🔄 Analyzing {call_type}..."):
-                # Save file
+            with st.spinner(f"🔄 Analyzing your {call_type}... This may take 30-60 seconds..."):
+                # Save uploaded file
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 file_extension = uploaded_file.name.split('.')[-1]
                 filename = f"{rm_name.replace(' ', '_')}_{call_type.replace(' ', '_')}_{timestamp}.{file_extension}"
@@ -560,28 +643,15 @@ Example:
                 with open(file_path, 'wb') as f:
                     f.write(uploaded_file.getbuffer())
                 
-                # Analyze based on mode
-                if "GPT" in analysis_mode:
-                    analysis = analyze_call_with_gpt(call_type, additional_context)
-                else:
-                    manual_scores = {
-                        "rapport_building": rapport_building,
-                        "needs_discovery": needs_discovery,
-                        "solution_presentation": solution_presentation,
-                        "objection_handling": objection_handling,
-                        "closing_technique": closing_technique,
-                        "profile_understanding": profile_understanding,
-                        "credibility_building": credibility_building,
-                        "principles_usage": principles_usage,
-                        "case_studies_usage": case_studies_usage,
-                        "gap_creation": gap_creation,
-                        "bhag_fine_tuning": bhag_fine_tuning,
-                        "urgency_creation": urgency_creation,
-                        "commitment_getting": commitment_getting,
-                        "contextualisation": contextualisation,
-                        "excitement_creation": excitement_creation
-                    }
-                    analysis = analyze_call_with_gpt(call_type, "", manual_scores)
+                # Analyze with GPT
+                analysis = analyze_call_with_gpt(
+                    str(file_path),
+                    rm_name,
+                    client_name,
+                    pitch_outcome,
+                    call_type,
+                    additional_context
+                )
                 
                 # Save to database
                 db = load_db()
@@ -598,7 +668,6 @@ Example:
                     "file_name": uploaded_file.name,
                     "additional_context": additional_context,
                     "notes": notes,
-                    "analysis_mode": analysis_mode,
                     "analysis": analysis
                 }
                 db.append(record)
@@ -614,64 +683,83 @@ Example:
                 with col1:
                     st.metric("Overall Score", f"{analysis['overall_score']:.1f}/100")
                 with col2:
-                    st.metric("IL Compliance", f"{analysis['methodology_compliance']:.1f}%")
+                    st.metric("Iron Lady Compliance", f"{analysis['methodology_compliance']:.1f}%")
                 with col3:
                     st.metric("Effectiveness", analysis['call_effectiveness'])
                 with col4:
+                    outcome_emoji = {"registration_expected": "🎉", "follow_up_needed": "📞", "needs_improvement": "⚠️"}
                     st.metric("Prediction", analysis['outcome_prediction']['likely_result'].replace('_', ' ').title())
                 
-                st.markdown("**Summary:**")
+                st.markdown("**Executive Summary:**")
                 st.info(analysis['call_summary'])
                 
-                # Core Dimensions
-                st.markdown("### 🎯 Core Dimensions")
-                core_df = pd.DataFrame([
-                    {"Dimension": k.replace('_', ' ').title(), "Score": v, "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"], "Percentage": f"{(v/IRON_LADY_PARAMETERS['Core Quality Dimensions'][k]['weight']*100):.0f}%"}
-                    for k, v in analysis['core_dimensions'].items()
-                ])
-                st.dataframe(core_df, use_container_width=True, hide_index=True)
+                # Core Dimensions Breakdown
+                st.markdown("### 🎯 Core Quality Dimensions")
+                core_dims = analysis.get('core_dimensions', {})
+                if core_dims:
+                    core_df = pd.DataFrame([
+                        {"Dimension": k.replace('_', ' ').title(), "Score": v, "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"]}
+                        for k, v in core_dims.items()
+                    ])
+                    st.dataframe(core_df, use_container_width=True, hide_index=True)
                 
-                # IL Parameters
-                st.markdown("### 💎 Iron Lady Parameters")
-                il_df = pd.DataFrame([
-                    {"Parameter": k.replace('_', ' ').title(), "Score": v, "Max": 10, "Percentage": f"{(v/10*100):.0f}%"}
-                    for k, v in analysis['iron_lady_parameters'].items()
-                ])
-                st.dataframe(il_df, use_container_width=True, hide_index=True)
+                # Iron Lady Parameters Breakdown
+                st.markdown("### 💎 Iron Lady Specific Parameters")
+                il_params = analysis.get('iron_lady_parameters', {})
+                if il_params:
+                    il_df = pd.DataFrame([
+                        {"Parameter": k.replace('_', ' ').title(), "Score": v, "Max": 10}
+                        for k, v in il_params.items()
+                    ])
+                    st.dataframe(il_df, use_container_width=True, hide_index=True)
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
                     st.markdown("### ✅ Strengths")
-                    for s in analysis['key_insights']['strengths']:
-                        st.success(f"✓ {s}")
+                    for strength in analysis.get('key_insights', {}).get('strengths', []):
+                        st.success(f"✓ {strength}")
                     
                     st.markdown("### 🌟 Best Moments")
-                    for m in analysis['key_insights']['best_moments']:
-                        st.write(f"⭐ {m}")
+                    for moment in analysis.get('key_insights', {}).get('best_moments', []):
+                        st.write(f"⭐ {moment}")
                 
                 with col2:
                     st.markdown("### 🔴 Critical Gaps")
-                    for g in analysis['key_insights']['critical_gaps']:
-                        st.error(f"✗ {g}")
+                    for gap in analysis.get('key_insights', {}).get('critical_gaps', []):
+                        st.error(f"✗ {gap}")
                     
                     st.markdown("### ⚠️ Missed Opportunities")
-                    for o in analysis['key_insights']['missed_opportunities']:
-                        st.warning(f"→ {o}")
+                    for opp in analysis.get('key_insights', {}).get('missed_opportunities', []):
+                        st.warning(f"→ {opp}")
                 
-                st.markdown("### 💡 Coaching Recommendations")
-                for rec in analysis['coaching_recommendations']:
+                st.markdown("### 💡 General Coaching Recommendations")
+                for rec in analysis.get('coaching_recommendations', []):
                     st.write(f"🎯 {rec}")
                 
-                st.markdown("### 🎓 Iron Lady Coaching")
-                for rec in analysis['iron_lady_specific_coaching']:
+                st.markdown("### 🎓 Iron Lady Specific Coaching")
+                for rec in analysis.get('iron_lady_specific_coaching', []):
                     st.write(f"💎 {rec}")
+                
+                # Outcome Prediction
+                st.markdown("### 🔮 Outcome Prediction")
+                pred = analysis.get('outcome_prediction', {})
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Likely Result", pred.get('likely_result', 'N/A').replace('_', ' ').title())
+                with col2:
+                    st.metric("Confidence", f"{pred.get('confidence', 0)}%")
+                with col3:
+                    st.write(f"**Reasoning:** {pred.get('reasoning', 'N/A')}")
 
 # DASHBOARD PAGE
 elif page == "Dashboard":
-    st.title("📊 My Dashboard")
+    st.title("📊 My Call Analysis Dashboard")
     
-    rm_filter = st.text_input("Filter by your name", placeholder="Enter your name")
+    # User filter
+    rm_filter = st.text_input("Filter by your name", placeholder="Enter your name to see your calls")
+    
+    # Call type filter
     call_type_filter = st.selectbox("Filter by Call Type", ["All"] + list(CALL_TYPE_FOCUS.keys()))
     
     db = load_db()
@@ -685,7 +773,7 @@ elif page == "Dashboard":
         filtered_db = [record for record in filtered_db if record.get('call_type') == call_type_filter]
     
     if not filtered_db:
-        st.info("No calls found. Upload your first recording!")
+        st.info("No calls found. Upload your first recording to get started!")
     else:
         st.write(f"**Total Calls:** {len(filtered_db)}")
         
@@ -704,7 +792,7 @@ elif page == "Dashboard":
         with col4:
             st.metric("Total Calls", len(filtered_db))
         
-        # Display calls
+        # Display calls table
         st.markdown("---")
         st.subheader("📋 Call History")
         
@@ -712,49 +800,42 @@ elif page == "Dashboard":
             analysis = record.get('analysis', {})
             with st.expander(
                 f"📞 {record['call_type']} - {record['client_name']} - {record['call_date']} "
-                f"(Score: {analysis.get('overall_score', 0):.1f}/100)"
+                f"(Score: {analysis.get('overall_score', 0):.1f}/100 | Compliance: {analysis.get('methodology_compliance', 0):.1f}%)"
             ):
-                col1, col2 = st.columns([3, 1])
+                col1, col2 = st.columns([2, 1])
                 
                 with col1:
                     st.write(f"**RM:** {record['rm_name']}")
                     st.write(f"**Participant:** {record['client_name']}")
                     st.write(f"**Call Type:** {record['call_type']}")
                     st.write(f"**Outcome:** {record['pitch_outcome']}")
-                    st.write(f"**Duration:** {record.get('call_duration', 'N/A')} min")
-                    st.write(f"**Analysis Mode:** {record.get('analysis_mode', 'N/A')}")
-                    st.write(f"**Summary:** {analysis.get('call_summary', 'N/A')}")
+                    st.write(f"**Duration:** {record.get('call_duration', 'N/A')} minutes")
+                    st.write(f"**Summary:** {analysis.get('call_summary', 'No summary available')}")
                 
                 with col2:
-                    st.metric("Score", f"{analysis.get('overall_score', 0):.1f}/100")
+                    st.metric("Overall Score", f"{analysis.get('overall_score', 0):.1f}/100")
                     st.metric("IL Compliance", f"{analysis.get('methodology_compliance', 0):.1f}%")
                     st.write(f"**Effectiveness:** {analysis.get('call_effectiveness', 'N/A')}")
+                    pred = analysis.get('outcome_prediction', {})
+                    st.write(f"**Prediction:** {pred.get('likely_result', 'N/A').replace('_', ' ').title()}")
                 
                 st.markdown("**Top Strengths:**")
-                for s in analysis.get('key_insights', {}).get('strengths', [])[:3]:
-                    st.write(f"✓ {s}")
+                for item in record['analysis']['key_insights']['strengths'][:3]:
+                    st.write(f"✓ {item}")
                 
                 st.markdown("**Critical Gaps:**")
-                for g in analysis.get('key_insights', {}).get('critical_gaps', [])[:3]:
-                    st.write(f"✗ {g}")
+                for item in record['analysis']['key_insights']['critical_gaps'][:3]:
+                    st.write(f"✗ {item}")
                 
-                # Delete button
-                col_a, col_b = st.columns([1, 4])
-                with col_a:
-                    if st.button("🗑️ Delete", key=f"del_dash_{record['id']}"):
-                        delete_record(record['id'])
-                        st.success("Deleted!")
-                        st.rerun()
-                
-                with col_b:
-                    analysis_json = json.dumps(record, indent=2)
-                    st.download_button(
-                        label="📥 Download Analysis",
-                        data=analysis_json,
-                        file_name=f"analysis_{record['client_name']}_{record['call_date']}.json",
-                        mime="application/json",
-                        key=f"download_{record['id']}"
-                    )
+                # Download analysis button
+                analysis_json = json.dumps(record, indent=2)
+                st.download_button(
+                    label="📥 Download Full Analysis",
+                    data=analysis_json,
+                    file_name=f"analysis_{record['client_name']}_{record['call_date']}.json",
+                    mime="application/json",
+                    key=f"download_{record['id']}"
+                )
 
 # ADMIN VIEW
 elif page == "Admin View":
@@ -807,28 +888,6 @@ elif page == "Admin View":
         ])
         st.dataframe(ct_df, use_container_width=True, hide_index=True)
         
-        # Bulk delete option
-        st.markdown("---")
-        st.subheader("⚠️ Bulk Operations")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("🗑️ Delete All Records (Careful!)", type="secondary"):
-                if st.checkbox("Confirm deletion of ALL records"):
-                    save_db([])
-                    st.success("All records deleted!")
-                    st.rerun()
-        
-        with col2:
-            # Download all data
-            all_data_json = json.dumps(db, indent=2)
-            st.download_button(
-                label="📥 Backup All Data (JSON)",
-                data=all_data_json,
-                file_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json"
-            )
-        
         # Filters
         st.markdown("---")
         st.subheader("🔍 Filters")
@@ -875,7 +934,6 @@ elif page == "Admin View":
         df_data = []
         for record in filtered_db:
             df_data.append({
-                "ID": record['id'],
                 "Date": record['call_date'],
                 "RM Name": record['rm_name'],
                 "Participant": record['client_name'],
@@ -885,19 +943,20 @@ elif page == "Admin View":
                 "Overall Score": f"{record['analysis'].get('overall_score', 0):.1f}",
                 "IL Compliance": f"{record['analysis'].get('methodology_compliance', 0):.1f}%",
                 "Effectiveness": record['analysis'].get('call_effectiveness', 'N/A'),
-                "Mode": record.get('analysis_mode', 'N/A')
+                "Prediction": record['analysis'].get('outcome_prediction', {}).get('likely_result', 'N/A').replace('_', ' ').title(),
+                "Uploaded": record['uploaded_at'].split('T')[0]
             })
         
         if df_data:
             df = pd.DataFrame(df_data)
             st.dataframe(df, use_container_width=True, hide_index=True)
             
-            # Download CSV
+            # Download all data
             csv = df.to_csv(index=False)
             st.download_button(
-                label="📥 Download CSV",
+                label="📥 Download All Data (CSV)",
                 data=csv,
-                file_name=f"iron_lady_export_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"iron_lady_call_analysis_export_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
             
@@ -905,6 +964,7 @@ elif page == "Admin View":
             st.markdown("---")
             st.subheader("📊 Parameter Performance Analysis")
             
+            # Aggregate Iron Lady parameter scores
             param_totals = {}
             param_counts = {}
             
@@ -918,7 +978,7 @@ elif page == "Admin View":
             
             param_avg = {param: (param_totals[param] / param_counts[param]) for param in param_totals}
             
-            if param_avg:
+            if param_avg:  # Only show if we have data
                 param_df = pd.DataFrame([
                     {
                         "Parameter": param.replace('_', ' ').title(),
@@ -930,89 +990,84 @@ elif page == "Admin View":
                 ])
                 
                 st.dataframe(param_df, use_container_width=True, hide_index=True)
-                st.info("💡 **Coaching Focus:** Prioritize 🔴 parameters for training")
+                
+                st.info("💡 **Coaching Focus:** Prioritize parameters marked 🔴 Needs Work for team training")
+            else:
+                st.info("No Iron Lady parameter data available for selected filters")
             
-            # Detailed records with delete
+            # Detailed view
             st.markdown("---")
             st.subheader("🔍 Detailed Records")
             
-            for record in reversed(filtered_db[:20]):
+            for record in reversed(filtered_db[:10]):  # Show last 10 for performance
                 analysis = record.get('analysis', {})
                 with st.expander(
                     f"{record['rm_name']} - {record['call_type']} - {record['client_name']} ({record['call_date']}) "
-                    f"- Score: {analysis.get('overall_score', 0):.1f}/100"
+                    f"- Score: {analysis.get('overall_score', 0):.1f}/100 | Compliance: {analysis.get('methodology_compliance', 0):.1f}%"
                 ):
                     col1, col2 = st.columns(2)
                     
                     with col1:
                         st.write("**Basic Info:**")
-                        st.write(f"• Record ID: {record['id']}")
                         st.write(f"• RM: {record['rm_name']}")
                         st.write(f"• Participant: {record['client_name']}")
                         st.write(f"• Call Type: {record.get('call_type', 'N/A')}")
                         st.write(f"• Date: {record['call_date']}")
-                        st.write(f"• Duration: {record.get('call_duration', 'N/A')} min")
+                        st.write(f"• Duration: {record.get('call_duration', 'N/A')} minutes")
                         st.write(f"• Outcome: {record['pitch_outcome']}")
-                        st.write(f"• Analysis Mode: {record.get('analysis_mode', 'N/A')}")
+                        st.write(f"• File: {record['file_name']}")
                     
                     with col2:
-                        st.write("**Performance:**")
-                        st.write(f"• Overall Score: {analysis.get('overall_score', 0):.1f}/100")
-                        st.write(f"• IL Compliance: {analysis.get('methodology_compliance', 0):.1f}%")
-                        st.write(f"• Effectiveness: {analysis.get('call_effectiveness', 'N/A')}")
-                        pred = analysis.get('outcome_prediction', {})
+                        st.write("**Performance Metrics:**")
+                        st.write(f"• Overall Score: {record['analysis'].get('overall_score', 0):.1f}/100")
+                        st.write(f"• IL Compliance: {record['analysis'].get('methodology_compliance', 0):.1f}%")
+                        st.write(f"• Effectiveness: {record['analysis'].get('call_effectiveness', 'N/A')}")
+                        pred = record['analysis'].get('outcome_prediction', {})
                         st.write(f"• Prediction: {pred.get('likely_result', 'N/A').replace('_', ' ').title()}")
                         st.write(f"• Confidence: {pred.get('confidence', 0)}%")
                     
-                    st.write(f"**Summary:** {analysis.get('call_summary', 'N/A')}")
+                    st.write(f"**Summary:** {record['analysis'].get('call_summary', 'No summary available')}")
                     
-                    if 'core_dimensions' in analysis:
+                    # Only show core dimensions if they exist
+                    if 'core_dimensions' in record['analysis']:
                         st.write("**Core Dimensions:**")
-                        for dim, score in analysis['core_dimensions'].items():
+                        for dim, score in record['analysis']['core_dimensions'].items():
                             max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][dim]["weight"]
-                            pct = (score / max_score) * 100
-                            emoji = "🟢" if pct >= 80 else "🟡" if pct >= 60 else "🔴"
-                            st.write(f"{emoji} {dim.replace('_', ' ').title()}: {score}/{max_score} ({pct:.0f}%)")
+                            st.write(f"• {dim.replace('_', ' ').title()}: {score}/{max_score}")
                     
-                    if 'iron_lady_parameters' in analysis:
+                    # Only show Iron Lady parameters if they exist
+                    if 'iron_lady_parameters' in record['analysis']:
                         st.write("**Iron Lady Parameters:**")
-                        for param, score in analysis['iron_lady_parameters'].items():
-                            pct = (score / 10) * 100
-                            emoji = "🟢" if pct >= 80 else "🟡" if pct >= 60 else "🔴"
-                            st.write(f"{emoji} {param.replace('_', ' ').title()}: {score}/10 ({pct:.0f}%)")
+                        for param, score in record['analysis']['iron_lady_parameters'].items():
+                            emoji = "🟢" if score >= 8 else "🟡" if score >= 6 else "🔴"
+                            st.write(f"{emoji} {param.replace('_', ' ').title()}: {score}/10")
                     
-                    insights = analysis.get('key_insights', {})
+                    # Show insights if available
+                    insights = record['analysis'].get('key_insights', {})
                     if insights.get('strengths'):
                         st.write("**Strengths:**")
-                        for s in insights['strengths'][:3]:
+                        for s in insights['strengths']:
                             st.write(f"✓ {s}")
                     
                     if insights.get('critical_gaps'):
                         st.write("**Critical Gaps:**")
-                        for g in insights['critical_gaps'][:3]:
+                        for g in insights['critical_gaps']:
                             st.write(f"✗ {g}")
                     
-                    # Action buttons
-                    col_a, col_b, col_c = st.columns([1, 1, 3])
-                    with col_a:
-                        if st.button("🗑️ Delete", key=f"del_admin_{record['id']}"):
-                            if delete_record(record['id']):
-                                st.success("Deleted!")
-                                st.rerun()
+                    # Show recommendations if available
+                    if 'coaching_recommendations' in record['analysis']:
+                        st.write("**Coaching Recommendations:**")
+                        for r in record['analysis']['coaching_recommendations']:
+                            st.write(f"→ {r}")
                     
-                    with col_b:
-                        record_json = json.dumps(record, indent=2)
-                        st.download_button(
-                            label="📥 JSON",
-                            data=record_json,
-                            file_name=f"record_{record['id']}.json",
-                            mime="application/json",
-                            key=f"dl_admin_{record['id']}"
-                        )
+                    if 'iron_lady_specific_coaching' in record['analysis']:
+                        st.write("**Iron Lady Specific Coaching:**")
+                        for r in record['analysis']['iron_lady_specific_coaching']:
+                            st.write(f"💎 {r}")
 
 # Footer
 st.sidebar.markdown("---")
-st.sidebar.info("💡 **Tip:** Use GPT mode for consistent AI analysis or Manual mode for precise control!")
+st.sidebar.info("💡 **Tip:** Focus on Iron Lady Compliance score to master the methodology!")
 st.sidebar.markdown("**Iron Lady Framework**")
 st.sidebar.markdown("• 27 Principles")
 st.sidebar.markdown("• BHAG Focus")
