@@ -93,8 +93,43 @@ def get_s3_stats():
     except:
         return None
 
+def upload_analysis_to_s3(record):
+    """Upload analysis JSON to S3 (auto-deletes after 7 days via lifecycle policy)"""
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        return None
+    
+    try:
+        date_path = datetime.now().strftime("%Y/%m/%d")
+        # Store under 'recordings/' prefix so same lifecycle policy applies
+        analysis_key = f"recordings/analysis/{date_path}/analysis_{record['id']}_{record['rm_name'].replace(' ', '_')}_{record['call_date']}.json"
+        
+        analysis_json = json.dumps(record, indent=2)
+        
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=analysis_key,
+            Body=analysis_json.encode('utf-8'),
+            ContentType='application/json',
+            ServerSideEncryption='AES256',
+            Metadata={
+                'rm_name': record['rm_name'],
+                'client_name': record['client_name'],
+                'call_type': record.get('call_type', ''),
+                'overall_score': str(record['analysis'].get('overall_score', 0)),
+                'record_id': str(record['id'])
+            }
+        )
+        
+        return f"s3://{bucket_name}/{analysis_key}"
+    except Exception as e:
+        st.error(f"Failed to upload analysis to S3: {str(e)}")
+        return None
+
 def generate_summary_report(record):
-    """Generate downloadable summary with improvements"""
+    """Generate downloadable summary with improvements and areas needing focus"""
     analysis = record.get('analysis', {})
     
     report = f"""
@@ -131,15 +166,56 @@ Call Effectiveness:      {analysis.get('call_effectiveness', 'N/A')}
         report += f"{status} {dim.replace('_', ' ').title():<25} {score:>2}/{max_score:<2} ({pct:>3.0f}%)\n"
     
     report += f"""
-💎 IRON LADY SPECIFIC PARAMETERS
+💎 IRON LADY SPECIFIC PARAMETERS (Sorted by Performance)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
     
+    # Sort parameters by score for better visibility
     il_params = analysis.get('iron_lady_parameters', {})
-    for param, score in il_params.items():
+    sorted_params = sorted(il_params.items(), key=lambda x: x[1], reverse=True)
+    
+    for param, score in sorted_params:
         pct = (score / 10) * 100
-        status = "✓" if pct >= 70 else "⚠" if pct >= 50 else "✗"
-        report += f"{status} {param.replace('_', ' ').title():<25} {score:>2}/10 ({pct:>3.0f}%)\n"
+        if pct >= 80:
+            status = "🟢 Excellent"
+        elif pct >= 60:
+            status = "🟡 Good    "
+        else:
+            status = "🔴 Needs Focus"
+        report += f"{status}  {param.replace('_', ' ').title():<25} {score:>2}/10 ({pct:>3.0f}%)\n"
+    
+    report += f"""
+📊 PERFORMANCE BREAKDOWN BY CATEGORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🟢 EXCELLENT (80%+):
+"""
+    excellent = [f"   • {p.replace('_', ' ').title()} - {s}/10 ({(s/10*100):.0f}%)" 
+                 for p, s in sorted_params if (s/10*100) >= 80]
+    if excellent:
+        report += "\n".join(excellent) + "\n"
+    else:
+        report += "   (None - Focus on building excellence in key areas)\n"
+    
+    report += f"""
+🟡 GOOD (60-79%):
+"""
+    good = [f"   • {p.replace('_', ' ').title()} - {s}/10 ({(s/10*100):.0f}%)" 
+            for p, s in sorted_params if 60 <= (s/10*100) < 80]
+    if good:
+        report += "\n".join(good) + "\n"
+    else:
+        report += "   (None)\n"
+    
+    report += f"""
+🔴 NEEDS IMMEDIATE FOCUS (<60%):
+"""
+    needs_focus = [f"   • {p.replace('_', ' ').title()} - {s}/10 ({(s/10*100):.0f}%) ⚠️ PRIORITY" 
+                   for p, s in sorted_params if (s/10*100) < 60]
+    if needs_focus:
+        report += "\n".join(needs_focus) + "\n"
+    else:
+        report += "   (None - Great job!)\n"
     
     report += f"""
 ✅ KEY STRENGTHS
@@ -149,11 +225,11 @@ Call Effectiveness:      {analysis.get('call_effectiveness', 'N/A')}
         report += f"{i}. {s}\n"
     
     report += f"""
-🔴 CRITICAL IMPROVEMENT AREAS
+🔴 CRITICAL IMPROVEMENT AREAS (TOP PRIORITY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
     for i, g in enumerate(analysis.get('key_insights', {}).get('critical_gaps', []), 1):
-        report += f"{i}. {g}\n"
+        report += f"{i}. ⚠️  {g}\n"
     
     report += f"""
 ⚠️ MISSED OPPORTUNITIES
@@ -163,18 +239,43 @@ Call Effectiveness:      {analysis.get('call_effectiveness', 'N/A')}
         report += f"{i}. {o}\n"
     
     report += f"""
-💡 COACHING RECOMMENDATIONS
+💡 GENERAL COACHING RECOMMENDATIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
     for i, r in enumerate(analysis.get('coaching_recommendations', []), 1):
         report += f"{i}. {r}\n"
     
     report += f"""
-🎓 IRON LADY SPECIFIC COACHING
+🎓 IRON LADY SPECIFIC COACHING (METHODOLOGY FOCUS)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
     for i, r in enumerate(analysis.get('iron_lady_specific_coaching', []), 1):
-        report += f"{i}. {r}\n"
+        report += f"{i}. 💎 {r}\n"
+    
+    report += f"""
+🎯 ACTION PLAN - NEXT STEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+    # Generate action plan based on weakest areas
+    action_items = []
+    for param, score in sorted_params[-3:]:  # Bottom 3 parameters
+        if score < 7:
+            param_name = param.replace('_', ' ').title()
+            if 'principles' in param:
+                action_items.append(f"• PRACTICE: Memorize and use 27 Principles by name in every call")
+            elif 'case_studies' in param:
+                action_items.append(f"• PRACTICE: Learn all 6 case studies (Neha, Rashmi, Chandana, etc.) and use specific names")
+            elif 'commitment' in param:
+                action_items.append(f"• PRACTICE: Always ask for explicit commitments (Day 2, Day 3, follow-up calls)")
+            elif 'bhag' in param:
+                action_items.append(f"• PRACTICE: Spend 5+ minutes on BHAG, help participants dream 2-3x bigger")
+            else:
+                action_items.append(f"• IMPROVE: Focus on {param_name} - aim for 8+/10")
+    
+    if action_items:
+        report += "\n".join(action_items[:5]) + "\n"
+    else:
+        report += "• Continue maintaining excellent performance across all parameters\n"
     
     report += f"""
 🔮 OUTCOME PREDICTION
@@ -189,7 +290,8 @@ Reasoning:     {analysis.get('outcome_prediction', {}).get('reasoning', 'N/A')}
 
 ═══════════════════════════════════════════════════════════════════
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Iron Lady Call Analysis System - AWS S3 Storage (Auto-deletes after 7 days)
+Iron Lady Call Analysis System
+All S3 Storage: Auto-deletes after 7 days (Recordings + Analysis JSON)
 ═══════════════════════════════════════════════════════════════════
 """
     return report
@@ -309,10 +411,21 @@ def save_db(data):
         json.dump(data, f, indent=2)
 
 def delete_record(record_id):
+    """Delete a record from the database and optionally offer to re-analyze"""
     db = load_db()
     db = [r for r in db if r['id'] != record_id]
     save_db(db)
     return True
+
+def check_for_duplicate_analysis(rm_name, client_name, call_date):
+    """Check if analysis already exists for same RM, participant, and date"""
+    db = load_db()
+    for record in db:
+        if (record.get('rm_name') == rm_name and 
+            record.get('client_name') == client_name and 
+            record.get('call_date') == str(call_date)):
+            return record
+    return None
 
 def analyze_call_with_gpt(call_type, additional_context, manual_scores=None):
     """Hybrid analysis: GPT or manual scores with Iron Lady context"""
@@ -783,6 +896,28 @@ elif page == "Upload & Analyze":
         elif "GPT" in analysis_mode and len(additional_context.strip()) < 200:
             st.error("❌ Please provide detailed call summary (minimum 200 characters). AI needs details to analyze accurately!")
         else:
+            # Check for duplicate analysis
+            existing_record = check_for_duplicate_analysis(rm_name, client_name, call_date)
+            
+            if existing_record:
+                st.warning(f"⚠️ An analysis already exists for {client_name} by {rm_name} on {call_date}")
+                st.write(f"**Existing Score:** {existing_record['analysis'].get('overall_score', 0):.1f}/100")
+                st.write(f"**Call Type:** {existing_record.get('call_type', 'N/A')}")
+                
+                replace_option = st.radio(
+                    "What would you like to do?",
+                    ["Cancel upload", "Replace existing analysis with new one"],
+                    key="replace_decision"
+                )
+                
+                if replace_option == "Cancel upload":
+                    st.info("Upload cancelled. No changes made.")
+                    st.stop()
+                else:
+                    st.info("✅ Proceeding to replace existing analysis...")
+                    # Delete the old record
+                    delete_record(existing_record['id'])
+            
             with st.spinner(f"🔄 Uploading to S3 and analyzing with AI..."):
                 # Upload to S3
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -849,6 +984,11 @@ elif page == "Upload & Analyze":
                 }
                 db.append(record)
                 save_db(db)
+                
+                # Upload analysis to S3
+                analysis_s3_url = upload_analysis_to_s3(record)
+                if analysis_s3_url:
+                    st.success(f"✅ Analysis JSON backed up to S3 (auto-deletes in 7 days)")
                 
                 st.success("✅ Analysis Complete!")
                 
@@ -989,6 +1129,7 @@ elif page == "Dashboard":
                     st.write(f"**Outcome:** {record['pitch_outcome']}")
                     st.write(f"**Duration:** {record.get('call_duration', 'N/A')} min")
                     st.write(f"**Storage:** {record.get('storage_type', 'local')} (7-day auto-delete)")
+                    st.write(f"**Analysis JSON:** S3 (7-day auto-delete)")
                     st.write(f"**Summary:** {analysis.get('call_summary', 'N/A')}")
                 
                 with col2:
@@ -1223,7 +1364,8 @@ elif page == "Admin View":
                         st.write(f"• Date: {record['call_date']}")
                         st.write(f"• Duration: {record.get('call_duration', 'N/A')} minutes")
                         st.write(f"• Outcome: {record['pitch_outcome']}")
-                        st.write(f"• Storage: {record.get('storage_type', 'local')} (auto-delete 7 days)")
+                        st.write(f"• Storage: {record.get('storage_type', 'local')} (7-day auto-delete)")
+                        st.write(f"• Analysis: S3 JSON (7-day auto-delete)")
                         st.write(f"• Analysis Mode: {record.get('analysis_mode', 'N/A')}")
                     
                     with col2:
@@ -1316,3 +1458,4 @@ st.sidebar.markdown("• Case Study Leverage")
 st.sidebar.markdown("---")
 st.sidebar.markdown("Built for Iron Lady 👩‍💼")
 st.sidebar.caption("AWS S3 Storage • 7-Day Auto-Delete")
+st.sidebar.caption("(Recordings + Analysis JSON)")
