@@ -1301,12 +1301,83 @@ elif page == "Admin View":
             df = pd.DataFrame(df_data)
             st.dataframe(df, use_container_width=True, hide_index=True)
             
-            csv = df.to_csv(index=False)
+            # Generate comprehensive CSV export
+            comprehensive_data = []
+            for record in filtered_db:
+                analysis = record.get('analysis', {})
+                core_dims = analysis.get('core_dimensions', {})
+                il_params = analysis.get('iron_lady_parameters', {})
+                
+                # Base record info
+                row = {
+                    "ID": record['id'],
+                    "Date": record['call_date'],
+                    "RM Name": record['rm_name'],
+                    "Participant": record['client_name'],
+                    "Call Type": record.get('call_type', 'N/A'),
+                    "Duration (min)": record.get('call_duration', 'N/A'),
+                    "Outcome": record['pitch_outcome'],
+                    "Overall Score": f"{analysis.get('overall_score', 0):.1f}",
+                    "IL Compliance %": f"{analysis.get('methodology_compliance', 0):.1f}",
+                    "Effectiveness": analysis.get('call_effectiveness', 'N/A'),
+                    "Prediction": analysis.get('outcome_prediction', {}).get('likely_result', 'N/A').replace('_', ' ').title(),
+                    "Confidence %": analysis.get('outcome_prediction', {}).get('confidence', 0)
+                }
+                
+                # Add core dimensions with percentages
+                weights = {
+                    "rapport_building": 20,
+                    "needs_discovery": 25,
+                    "solution_presentation": 25,
+                    "objection_handling": 15,
+                    "closing_technique": 15
+                }
+                for dim, score in core_dims.items():
+                    max_score = weights.get(dim, 10)
+                    pct = (score / max_score) * 100
+                    row[f"CD: {dim.replace('_', ' ').title()}"] = f"{score}/{max_score}"
+                    row[f"CD: {dim.replace('_', ' ').title()} %"] = f"{pct:.0f}%"
+                
+                # Add IL parameters with percentages and status
+                sorted_il_params = sorted(il_params.items(), key=lambda x: x[1], reverse=True)
+                for param, score in sorted_il_params:
+                    pct = (score / 10) * 100
+                    status = "Excellent" if pct >= 80 else "Good" if pct >= 60 else "Needs Focus"
+                    row[f"IL: {param.replace('_', ' ').title()}"] = f"{score}/10"
+                    row[f"IL: {param.replace('_', ' ').title()} %"] = f"{pct:.0f}%"
+                    row[f"IL: {param.replace('_', ' ').title()} Status"] = status
+                
+                # Add areas needing improvement
+                needs_improvement = []
+                for param, score in sorted_il_params:
+                    if (score / 10 * 100) < 60:
+                        needs_improvement.append(param.replace('_', ' ').title())
+                
+                row["Areas Needing Improvement"] = "; ".join(needs_improvement) if needs_improvement else "None - All parameters good"
+                
+                # Add top 3 strengths
+                strengths = analysis.get('key_insights', {}).get('strengths', [])
+                row["Top Strengths"] = "; ".join(strengths[:3]) if strengths else "N/A"
+                
+                # Add top 3 gaps
+                gaps = analysis.get('key_insights', {}).get('critical_gaps', [])
+                row["Critical Gaps"] = "; ".join(gaps[:3]) if gaps else "N/A"
+                
+                # Add coaching recommendations
+                coaching = analysis.get('iron_lady_specific_coaching', [])
+                row["Coaching Focus"] = "; ".join(coaching[:3]) if coaching else "N/A"
+                
+                comprehensive_data.append(row)
+            
+            comprehensive_df = pd.DataFrame(comprehensive_data)
+            csv = comprehensive_df.to_csv(index=False)
+            
             st.download_button(
-                label="📥 Download Filtered Data (CSV)",
+                label="📥 Download Comprehensive Report (CSV)",
                 data=csv,
-                file_name=f"iron_lady_export_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
+                file_name=f"iron_lady_comprehensive_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                help="Includes all scores, parameters, percentages, and improvement areas"
             )
             
             # Parameter Performance Analysis
