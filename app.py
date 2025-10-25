@@ -776,7 +776,8 @@ elif page == "Upload & Analyze":
     st.title("📤 Upload Call & Get AI Analysis")
     st.write("AI trained on Iron Lady methodology will analyze your call")
     
-    analysis_mode = st.radio("Analysis Mode:", ["🤖 GPT Auto-Analysis (Recommended)", "✍️ Manual Scoring"], horizontal=True)
+    # GPT-only analysis (v3.0 - manual scoring removed)
+    analysis_mode = "GPT Auto-Analysis"  # Fixed to GPT-only
     
     with st.form("upload_form"):
         col1, col2 = st.columns(2)
@@ -857,35 +858,7 @@ elif page == "Upload & Analyze":
             
             st.info("💡 **Tip:** The more detailed your summary, the more accurate the AI analysis. Mention specific principle names and case study names!")
             
-        else:
-            additional_context = ""
-            st.info("💡 Manual mode: Score each parameter based on call performance")
-            
-            st.markdown("### 🎯 Core Dimensions")
-            col1, col2 = st.columns(2)
-            with col1:
-                rapport_building = st.slider("Rapport Building", 0, 20, 10, help="Name usage, warmth, empathy")
-                needs_discovery = st.slider("Needs Discovery", 0, 25, 12, help="Strategic questions, BHAG exploration")
-                solution_presentation = st.slider("Solution Presentation", 0, 25, 12, help="Program benefits, community, outcomes")
-            with col2:
-                objection_handling = st.slider("Objection Handling", 0, 15, 8, help="Empathy + solutions")
-                closing_technique = st.slider("Closing Technique", 0, 15, 8, help="Powerfully invite, commitments")
-            
-            st.markdown("### 💎 Iron Lady Parameters")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                profile_understanding = st.slider("Profile Understanding", 0, 10, 5)
-                credibility_building = st.slider("Credibility Building", 0, 10, 5)
-                principles_usage = st.slider("27 Principles Usage", 0, 10, 5, help="Mentioned by name?")
-            with col2:
-                case_studies_usage = st.slider("Case Studies", 0, 10, 5, help="Used specific names?")
-                gap_creation = st.slider("Gap Creation", 0, 10, 5)
-                bhag_fine_tuning = st.slider("BHAG Fine Tuning", 0, 10, 5, help="Helped dream bigger?")
-            with col3:
-                urgency_creation = st.slider("Urgency Creation", 0, 10, 5)
-                commitment_getting = st.slider("Commitment Getting", 0, 10, 5, help="Explicit commitments?")
-                contextualisation = st.slider("Contextualisation", 0, 10, 5)
-            excitement_creation = st.slider("Excitement Creation", 0, 10, 5)
+        # Manual scoring removed in v3.0 - GPT-only analysis
         
         notes = st.text_area("Additional Notes (Optional)", placeholder="Any other observations...")
         submitted = st.form_submit_button("🚀 Analyze Call", use_container_width=True)
@@ -893,7 +866,7 @@ elif page == "Upload & Analyze":
     if submitted:
         if not all([rm_name, client_name, uploaded_file]):
             st.error("❌ Please fill all required fields (*)")
-        elif "GPT" in analysis_mode and len(additional_context.strip()) < 200:
+        elif len(additional_context.strip()) < 200:
             st.error("❌ Please provide detailed call summary (minimum 200 characters). AI needs details to analyze accurately!")
         else:
             # Check for duplicate analysis
@@ -940,27 +913,8 @@ elif page == "Upload & Analyze":
                 st.success(f"✅ File uploaded to S3 (auto-deletes in 7 days)")
                 
                 # Analyze
-                if "GPT" in analysis_mode:
-                    analysis = analyze_call_with_gpt(call_type, additional_context)
-                else:
-                    manual_scores = {
-                        "rapport_building": rapport_building,
-                        "needs_discovery": needs_discovery,
-                        "solution_presentation": solution_presentation,
-                        "objection_handling": objection_handling,
-                        "closing_technique": closing_technique,
-                        "profile_understanding": profile_understanding,
-                        "credibility_building": credibility_building,
-                        "principles_usage": principles_usage,
-                        "case_studies_usage": case_studies_usage,
-                        "gap_creation": gap_creation,
-                        "bhag_fine_tuning": bhag_fine_tuning,
-                        "urgency_creation": urgency_creation,
-                        "commitment_getting": commitment_getting,
-                        "contextualisation": contextualisation,
-                        "excitement_creation": excitement_creation
-                    }
-                    analysis = analyze_call_with_gpt(call_type, "", manual_scores)
+                # Analyze - Pure GPT only (v3.0)
+                analysis = analyze_call_with_gpt(call_type, additional_context)
                 
                 # Save to database
                 db = load_db()
@@ -979,7 +933,7 @@ elif page == "Upload & Analyze":
                     "expires_at": (datetime.now().timestamp() + (7 * 24 * 60 * 60)),
                     "additional_context": additional_context,
                     "notes": notes,
-                    "analysis_mode": analysis_mode,
+                    "analysis_mode": "GPT Auto-Analysis (v3.0)",
                     "analysis": analysis
                 }
                 db.append(record)
