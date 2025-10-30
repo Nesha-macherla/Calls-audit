@@ -93,6 +93,125 @@ def get_s3_stats():
     except:
         return None
 
+def list_s3_recordings():
+    """List all recordings in S3"""
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        return []
+    
+    try:
+        recordings = []
+        paginator = s3_client.get_paginator('list_objects_v2')
+        
+        # List audio recordings
+        for page in paginator.paginate(Bucket=bucket_name, Prefix='recordings/'):
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    if not key.endswith('/') and '/analysis/' not in key:  # Skip folders and analysis JSONs
+                        recordings.append({
+                            'key': key,
+                            'size': obj['Size'],
+                            'last_modified': obj['LastModified'],
+                            'filename': key.split('/')[-1]
+                        })
+        
+        return recordings
+    except Exception as e:
+        st.error(f"Error listing S3 recordings: {str(e)}")
+        return []
+
+def get_s3_analysis(record_id, rm_name, call_date):
+    """Retrieve analysis JSON from S3 for a specific call"""
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        return None
+    
+    try:
+        # Search for analysis JSON in S3
+        prefix = f"recordings/analysis/"
+        response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+        
+        if 'Contents' not in response:
+            return None
+        
+        # Find matching analysis file
+        for obj in response['Contents']:
+            key = obj['Key']
+            if f"analysis_{record_id}_" in key or (rm_name.replace(' ', '_') in key and call_date in key):
+                # Download and parse JSON
+                file_obj = s3_client.get_object(Bucket=bucket_name, Key=key)
+                content = file_obj['Body'].read().decode('utf-8')
+                return json.loads(content)
+        
+        return None
+    except Exception as e:
+        st.error(f"Error retrieving S3 analysis: {str(e)}")
+        return None
+
+def setup_s3_lifecycle_policy():
+    """Setup or verify S3 lifecycle policy for 7-day auto-delete"""
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        return False, "S3 client not configured"
+    
+    try:
+        lifecycle_policy = {
+            'Rules': [
+                {
+                    'Id': 'iron-lady-auto-delete-7-days',
+                    'Status': 'Enabled',
+                    'Prefix': 'recordings/',
+                    'Expiration': {
+                        'Days': 7
+                    }
+                }
+            ]
+        }
+        
+        s3_client.put_bucket_lifecycle_configuration(
+            Bucket=bucket_name,
+            LifecycleConfiguration=lifecycle_policy
+        )
+        
+        return True, "✅ S3 lifecycle policy configured successfully! Files will auto-delete after 7 days."
+    
+    except Exception as e:
+        return False, f"❌ Error: {str(e)}"
+
+def verify_s3_lifecycle_policy():
+    """Check if S3 lifecycle policy is active"""
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        return None
+    
+    try:
+        response = s3_client.get_bucket_lifecycle_configuration(Bucket=bucket_name)
+        rules = response.get('Rules', [])
+        
+        for rule in rules:
+            if rule.get('Prefix') == 'recordings/' and rule.get('Status') == 'Enabled':
+                expiration_days = rule.get('Expiration', {}).get('Days')
+                return {
+                    'active': True,
+                    'days': expiration_days,
+                    'rule_id': rule.get('Id')
+                }
+        
+        return {'active': False}
+    except s3_client.exceptions.NoSuchLifecycleConfiguration:
+        return {'active': False, 'error': 'No lifecycle policy found'}
+    except Exception as e:
+        return {'active': False, 'error': str(e)}
+
 def upload_analysis_to_s3(record):
     """Upload analysis JSON to S3 (auto-deletes after 7 days via lifecycle policy)"""
     s3_client = get_s3_client()
@@ -410,6 +529,42 @@ def save_db(data):
     with open(DB_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
+def cleanup_old_records():
+    """Auto-delete database records older than 7 days"""
+    db = load_db()
+    current_time = datetime.now().timestamp()
+    seven_days_seconds = 7 * 24 * 60 * 60
+    
+    # Filter out records older than 7 days
+    cleaned_db = []
+    deleted_count = 0
+    
+    for record in db:
+        uploaded_at = record.get('uploaded_at')
+        if uploaded_at:
+            try:
+                # Parse ISO format timestamp
+                upload_datetime = datetime.fromisoformat(uploaded_at.replace('Z', '+00:00'))
+                upload_timestamp = upload_datetime.timestamp()
+                
+                # Keep if less than 7 days old
+                if (current_time - upload_timestamp) < seven_days_seconds:
+                    cleaned_db.append(record)
+                else:
+                    deleted_count += 1
+            except:
+                # Keep record if timestamp parsing fails
+                cleaned_db.append(record)
+        else:
+            # Keep records without timestamp (shouldn't happen, but safe)
+            cleaned_db.append(record)
+    
+    # Save cleaned database if anything was deleted
+    if deleted_count > 0:
+        save_db(cleaned_db)
+    
+    return deleted_count
+
 def delete_record(record_id):
     """Delete a record from the database and optionally offer to re-analyze"""
     db = load_db()
@@ -692,6 +847,14 @@ def generate_analysis_from_scores(core_dims, call_type, justification, il_params
         "call_summary": summary
     }
 
+# Auto-cleanup old records (7+ days)
+try:
+    deleted_count = cleanup_old_records()
+    if deleted_count > 0:
+        st.toast(f"🗑️ Auto-cleaned {deleted_count} records older than 7 days")
+except Exception as e:
+    pass  # Silent fail on cleanup errors
+
 # Sidebar
 st.sidebar.title("👩‍💼 Iron Lady Call Analysis")
 st.sidebar.markdown("**AI-Powered Analysis**")
@@ -705,14 +868,41 @@ try:
     if stats:
         st.sidebar.success("**Connected** ✅")
         st.sidebar.info(f"**Files:** {stats['files']}\n**Size:** {stats['size']}")
-        st.sidebar.caption("🗑️ Auto-delete: 7 days")
+        
+        # Check lifecycle policy status
+        lifecycle_status = verify_s3_lifecycle_policy()
+        if lifecycle_status:
+            if lifecycle_status.get('active'):
+                days = lifecycle_status.get('days', 7)
+                st.sidebar.success(f"🗑️ Auto-delete: {days} days ✅")
+            else:
+                st.sidebar.warning("⚠️ Auto-delete: Not configured")
+                if st.sidebar.button("🔧 Setup Auto-Delete Now"):
+                    success, message = setup_s3_lifecycle_policy()
+                    if success:
+                        st.sidebar.success(message)
+                        st.rerun()
+                    else:
+                        st.sidebar.error(message)
+        else:
+            st.sidebar.caption("🗑️ Auto-delete: Checking...")
     else:
         st.sidebar.warning("S3 stats unavailable")
-except:
+except Exception as e:
     st.sidebar.error("⚠️ S3 not configured")
     st.sidebar.caption("Add AWS credentials to secrets")
 
-page = st.sidebar.radio("Navigate", ["Upload & Analyze", "Dashboard", "Admin View", "Parameters Guide"])
+# Database auto-cleanup status
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🗄️ Database")
+try:
+    db = load_db()
+    st.sidebar.info(f"**Records:** {len(db)}")
+    st.sidebar.caption("🗑️ Auto-cleanup: 7 days")
+except:
+    st.sidebar.caption("Database initializing...")
+
+page = st.sidebar.radio("Navigate", ["Upload & Analyze", "Dashboard", "S3 Browser", "Admin View", "Parameters Guide"])
 
 # Parameters Guide Page
 if page == "Parameters Guide":
@@ -1127,6 +1317,158 @@ elif page == "Dashboard":
                         mime="application/json",
                         key=f"json_{record['id']}"
                     )
+
+# S3 Browser Page - View and Retrieve Recordings from AWS
+elif page == "S3 Browser":
+    st.title("📦 AWS S3 Storage Browser")
+    st.write("View all recordings stored in AWS S3 and retrieve analysis data")
+    
+    # Check S3 connection
+    s3_stats = get_s3_stats()
+    if not s3_stats:
+        st.error("❌ AWS S3 not connected. Please configure AWS credentials in Streamlit secrets.")
+        st.info("""
+        **Required Secrets:**
+        - AWS_ACCESS_KEY_ID
+        - AWS_SECRET_ACCESS_KEY
+        - AWS_S3_BUCKET_NAME
+        - AWS_S3_REGION
+        """)
+        st.stop()
+    
+    # S3 Status
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Files", s3_stats['files'])
+    with col2:
+        st.metric("Storage Used", s3_stats['size'])
+    with col3:
+        lifecycle_status = verify_s3_lifecycle_policy()
+        if lifecycle_status and lifecycle_status.get('active'):
+            days = lifecycle_status.get('days', 7)
+            st.metric("Auto-Delete", f"{days} days", delta="Active", delta_color="normal")
+        else:
+            st.metric("Auto-Delete", "Not Set", delta="Inactive", delta_color="inverse")
+    
+    st.markdown("---")
+    
+    # Lifecycle Management Section
+    with st.expander("🔧 AWS S3 Lifecycle Management", expanded=lifecycle_status and not lifecycle_status.get('active')):
+        st.markdown("### Configure Auto-Delete Policy")
+        
+        lifecycle_status = verify_s3_lifecycle_policy()
+        
+        if lifecycle_status and lifecycle_status.get('active'):
+            st.success(f"✅ **Lifecycle Policy Active**")
+            st.info(f"Files in `recordings/` folder will automatically delete after **{lifecycle_status.get('days', 7)} days**")
+            st.caption(f"Rule ID: {lifecycle_status.get('rule_id')}")
+        else:
+            st.warning("⚠️ **Lifecycle Policy Not Configured**")
+            st.write("Files are accumulating in S3 without automatic deletion.")
+            
+            if lifecycle_status and lifecycle_status.get('error'):
+                st.error(f"Error: {lifecycle_status.get('error')}")
+            
+            st.markdown("**What this does:**")
+            st.write("- Automatically deletes files older than 7 days")
+            st.write("- Applies to all files in `recordings/` folder")
+            st.write("- Helps manage storage costs")
+            st.write("- Ensures GDPR compliance")
+            
+            col_a, col_b = st.columns([1, 3])
+            with col_a:
+                if st.button("🚀 Setup Auto-Delete", type="primary", use_container_width=True):
+                    with st.spinner("Configuring S3 lifecycle policy..."):
+                        success, message = setup_s3_lifecycle_policy()
+                        if success:
+                            st.success(message)
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error(message)
+            with col_b:
+                st.caption("⚠️ Requires S3 PutLifecycleConfiguration permission")
+    
+    st.markdown("---")
+    
+    # List S3 Recordings
+    st.subheader("📁 S3 Recordings")
+    
+    with st.spinner("Loading recordings from S3..."):
+        recordings = list_s3_recordings()
+    
+    if not recordings:
+        st.info("No recordings found in S3. Upload calls to see them here.")
+    else:
+        st.success(f"Found {len(recordings)} recordings in S3")
+        
+        # Search and filter
+        search = st.text_input("🔍 Search by filename", placeholder="e.g., Priya_Sharma")
+        
+        if search:
+            recordings = [r for r in recordings if search.lower() in r['filename'].lower()]
+            st.caption(f"Showing {len(recordings)} matching recordings")
+        
+        # Display recordings table
+        recordings_data = []
+        for rec in sorted(recordings, key=lambda x: x['last_modified'], reverse=True)[:100]:  # Show last 100
+            recordings_data.append({
+                'Filename': rec['filename'],
+                'Size': f"{rec['size'] / (1024*1024):.2f} MB" if rec['size'] > 1024*1024 else f"{rec['size'] / 1024:.2f} KB",
+                'Uploaded': rec['last_modified'].strftime('%Y-%m-%d %H:%M'),
+                'Days Old': (datetime.now(rec['last_modified'].tzinfo) - rec['last_modified']).days,
+                'S3 Key': rec['key']
+            })
+        
+        if recordings_data:
+            df = pd.DataFrame(recordings_data)
+            
+            # Color code by age
+            st.markdown("""
+            **Status Legend:**
+            - 🟢 0-3 days old (Fresh)
+            - 🟡 4-6 days old (Expiring soon)
+            - 🔴 7+ days old (Will be deleted)
+            """)
+            
+            # Display with age-based styling
+            for idx, row in df.iterrows():
+                days_old = row['Days Old']
+                if days_old >= 7:
+                    color = "🔴"
+                    status = "Scheduled for deletion"
+                elif days_old >= 4:
+                    color = "🟡"
+                    status = "Expires soon"
+                else:
+                    color = "🟢"
+                    status = "Fresh"
+                
+                with st.expander(f"{color} {row['Filename']} - {row['Size']} ({status})"):
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        st.write(f"**Uploaded:** {row['Uploaded']}")
+                        st.write(f"**Age:** {days_old} days")
+                        st.write(f"**Status:** {status}")
+                    with col2:
+                        st.caption("**S3 Path:**")
+                        st.code(row['S3 Key'], language="text")
+                    
+                    # Try to find corresponding database record
+                    db = load_db()
+                    matching_records = [r for r in db if row['Filename'] in r.get('file_path', '')]
+                    
+                    if matching_records:
+                        st.success(f"✅ Found in database (Record ID: {matching_records[0]['id']})")
+                        if st.button(f"View Analysis", key=f"view_{idx}"):
+                            st.json(matching_records[0]['analysis'])
+                    else:
+                        st.warning("⚠️ Not found in local database (may have been cleaned up)")
+                        st.caption("Analysis data may still be in S3. Check S3 console or re-analyze.")
+        
+        st.markdown("---")
+        st.caption(f"Showing {len(recordings_data)} of {len(recordings)} total recordings")
+        st.caption("💡 Tip: Only recent recordings (<7 days) are shown by default")
 
 # Admin View Page
 elif page == "Admin View":
