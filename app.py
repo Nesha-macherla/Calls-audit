@@ -207,8 +207,12 @@ def verify_s3_lifecycle_policy():
                 }
         
         return {'active': False}
-    except s3_client.exceptions.NoSuchLifecycleConfiguration:
-        return {'active': False, 'error': 'No lifecycle policy found'}
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', '')
+        if error_code == 'NoSuchLifecycleConfiguration':
+            return {'active': False, 'error': 'No lifecycle policy found'}
+        else:
+            return {'active': False, 'error': str(e)}
     except Exception as e:
         return {'active': False, 'error': str(e)}
 
@@ -869,23 +873,26 @@ try:
         st.sidebar.success("**Connected** ✅")
         st.sidebar.info(f"**Files:** {stats['files']}\n**Size:** {stats['size']}")
         
-        # Check lifecycle policy status
-        lifecycle_status = verify_s3_lifecycle_policy()
-        if lifecycle_status:
-            if lifecycle_status.get('active'):
-                days = lifecycle_status.get('days', 7)
-                st.sidebar.success(f"🗑️ Auto-delete: {days} days ✅")
+        # Check lifecycle policy status (with error handling)
+        try:
+            lifecycle_status = verify_s3_lifecycle_policy()
+            if lifecycle_status:
+                if lifecycle_status.get('active'):
+                    days = lifecycle_status.get('days', 7)
+                    st.sidebar.success(f"🗑️ Auto-delete: {days} days ✅")
+                else:
+                    st.sidebar.warning("⚠️ Auto-delete: Not configured")
+                    if st.sidebar.button("🔧 Setup Auto-Delete Now"):
+                        success, message = setup_s3_lifecycle_policy()
+                        if success:
+                            st.sidebar.success(message)
+                            st.rerun()
+                        else:
+                            st.sidebar.error(message)
             else:
-                st.sidebar.warning("⚠️ Auto-delete: Not configured")
-                if st.sidebar.button("🔧 Setup Auto-Delete Now"):
-                    success, message = setup_s3_lifecycle_policy()
-                    if success:
-                        st.sidebar.success(message)
-                        st.rerun()
-                    else:
-                        st.sidebar.error(message)
-        else:
-            st.sidebar.caption("🗑️ Auto-delete: Checking...")
+                st.sidebar.caption("🗑️ Auto-delete: Checking...")
+        except Exception as e:
+            st.sidebar.caption("🗑️ Auto-delete: Check in S3 Browser")
     else:
         st.sidebar.warning("S3 stats unavailable")
 except Exception as e:
@@ -1343,20 +1350,28 @@ elif page == "S3 Browser":
     with col2:
         st.metric("Storage Used", s3_stats['size'])
     with col3:
-        lifecycle_status = verify_s3_lifecycle_policy()
-        if lifecycle_status and lifecycle_status.get('active'):
-            days = lifecycle_status.get('days', 7)
-            st.metric("Auto-Delete", f"{days} days", delta="Active", delta_color="normal")
-        else:
-            st.metric("Auto-Delete", "Not Set", delta="Inactive", delta_color="inverse")
+        try:
+            lifecycle_status = verify_s3_lifecycle_policy()
+            if lifecycle_status and lifecycle_status.get('active'):
+                days = lifecycle_status.get('days', 7)
+                st.metric("Auto-Delete", f"{days} days", delta="Active", delta_color="normal")
+            else:
+                st.metric("Auto-Delete", "Not Set", delta="Inactive", delta_color="inverse")
+        except Exception as e:
+            st.metric("Auto-Delete", "Unknown", delta="Check below", delta_color="off")
     
     st.markdown("---")
     
     # Lifecycle Management Section
-    with st.expander("🔧 AWS S3 Lifecycle Management", expanded=lifecycle_status and not lifecycle_status.get('active')):
-        st.markdown("### Configure Auto-Delete Policy")
-        
+    try:
         lifecycle_status = verify_s3_lifecycle_policy()
+        expanded_by_default = lifecycle_status and not lifecycle_status.get('active')
+    except Exception as e:
+        lifecycle_status = {'active': False, 'error': str(e)}
+        expanded_by_default = True
+    
+    with st.expander("🔧 AWS S3 Lifecycle Management", expanded=expanded_by_default):
+        st.markdown("### Configure Auto-Delete Policy")
         
         if lifecycle_status and lifecycle_status.get('active'):
             st.success(f"✅ **Lifecycle Policy Active**")
