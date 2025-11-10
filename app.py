@@ -1713,6 +1713,200 @@ elif page == "Admin View":
                             mime="application/json",
                             key=f"json_adm_{record['id']}"
                         )
+    
+    # TAB 2: S3 Analysis JSONs
+    with tab_s3_analysis:
+        st.subheader("📦 AWS S3 Analysis Browser")
+        
+        # Check S3 connection
+        s3_stats = get_s3_stats()
+        if not s3_stats:
+            st.error("❌ AWS S3 not connected. Please configure AWS credentials in Streamlit secrets.")
+            st.stop()
+        
+        # S3 Status metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total S3 Files", s3_stats['files'])
+        with col2:
+            st.metric("Storage Used", s3_stats['size'])
+        with col3:
+            try:
+                lifecycle_status = verify_s3_lifecycle_policy()
+                if lifecycle_status and lifecycle_status.get('active'):
+                    days = lifecycle_status.get('days', 7)
+                    st.metric("Auto-Delete", f"{days} days ✅", delta="Active")
+                else:
+                    st.metric("Auto-Delete", "Not Set", delta="Setup in AWS Console", delta_color="inverse")
+            except:
+                st.metric("Auto-Delete", "Unknown", delta="Check AWS Console")
+        
+        st.markdown("---")
+        st.caption("📁 **S3 Path:** `recordings/analysis/YYYY/MM/DD/*.json`")
+        
+        with st.spinner("Loading analysis files from S3..."):
+            analyses = list_s3_analyses()
+        
+        if not analyses:
+            st.info("No analysis JSONs found in S3. Upload and analyze calls to see them here.")
+        else:
+            st.success(f"Found **{len(analyses)}** analysis files in S3")
+            
+            # Search
+            search = st.text_input("🔍 Search by filename", placeholder="e.g., analysis_15_Priya", key="search_s3_analysis")
+            
+            if search:
+                analyses = [a for a in analyses if search.lower() in a['filename'].lower()]
+                st.caption(f"Showing {len(analyses)} matching analyses")
+            
+            # Display analyses
+            st.markdown("---")
+            for idx, analysis in enumerate(analyses[:50]):
+                days_old = (datetime.now(analysis['last_modified'].tzinfo) - analysis['last_modified']).days
+                
+                if days_old >= 7:
+                    color = "🔴"
+                    status = "Scheduled for deletion"
+                elif days_old >= 4:
+                    color = "🟡"
+                    status = "Expires soon"
+                else:
+                    color = "🟢"
+                    status = "Fresh"
+                
+                with st.expander(f"{color} {analysis['filename']} - {status} ({days_old} days old)"):
+                    col_a, col_b = st.columns([3, 2])
+                    
+                    with col_a:
+                        st.write(f"**📁 S3 Path:**")
+                        st.code(analysis['key'], language="text")
+                        st.write(f"**📅 Uploaded:** {analysis['last_modified'].strftime('%Y-%m-%d %H:%M:%S')}")
+                        st.write(f"**📊 Size:** {analysis['size'] / 1024:.1f} KB")
+                        st.write(f"**⏰ Age:** {days_old} days")
+                    
+                    with col_b:
+                        if st.button("📥 Download & View", key=f"dl_s3_{idx}", use_container_width=True):
+                            with st.spinner("Downloading from S3..."):
+                                analysis_data = download_s3_analysis(analysis['key'])
+                            
+                            if analysis_data:
+                                st.success("✅ Downloaded!")
+                                json_str = json.dumps(analysis_data, indent=2)
+                                st.download_button(
+                                    label="💾 Save JSON",
+                                    data=json_str,
+                                    file_name=analysis['filename'],
+                                    mime="application/json",
+                                    key=f"save_json_{idx}"
+                                )
+                    
+                    # Preview
+                    if f"preview_s3_{idx}" in st.session_state or st.button("👁️ Preview", key=f"prev_{idx}"):
+                        st.session_state[f"preview_s3_{idx}"] = True
+                        
+                        with st.spinner("Loading..."):
+                            analysis_data = download_s3_analysis(analysis['key'])
+                        
+                        if analysis_data:
+                            st.markdown("---")
+                            st.markdown("### 📊 Analysis Preview")
+                            
+                            record_data = analysis_data
+                            analysis_results = record_data.get('analysis', {})
+                            
+                            info_col1, info_col2, info_col3 = st.columns(3)
+                            with info_col1:
+                                st.metric("RM", record_data.get('rm_name', 'N/A'))
+                            with info_col2:
+                                st.metric("Participant", record_data.get('client_name', 'N/A'))
+                            with info_col3:
+                                overall_score = analysis_results.get('overall_score', 0)
+                                st.metric("Score", f"{overall_score:.1f}/100")
+                            
+                            st.write(f"**Call Type:** {record_data.get('call_type', 'N/A')}")
+                            st.write(f"**Date:** {record_data.get('call_date', 'N/A')}")
+                            st.write(f"**Outcome:** {record_data.get('pitch_outcome', 'N/A')}")
+                            
+                            with st.expander("📈 Detailed Scores"):
+                                core = analysis_results.get('core_dimensions', {})
+                                iron_lady = analysis_results.get('iron_lady_parameters', {})
+                                
+                                col_score1, col_score2 = st.columns(2)
+                                with col_score1:
+                                    st.markdown("**🎯 Core Dimensions**")
+                                    for param, score in core.items():
+                                        st.write(f"• {param.replace('_', ' ').title()}: {score}")
+                                
+                                with col_score2:
+                                    st.markdown("**💎 Iron Lady Parameters**")
+                                    for param, score in iron_lady.items():
+                                        st.write(f"• {param.replace('_', ' ').title()}: {score}")
+                            
+                            if analysis_results.get('strengths'):
+                                with st.expander("✅ Strengths"):
+                                    for strength in analysis_results['strengths']:
+                                        st.write(f"• {strength}")
+                            
+                            if analysis_results.get('areas_for_improvement'):
+                                with st.expander("📈 Improvements"):
+                                    for area in analysis_results['areas_for_improvement']:
+                                        st.write(f"• {area}")
+                            
+                            with st.expander("🔍 Full JSON"):
+                                st.json(analysis_data)
+            
+            if len(analyses) > 50:
+                st.info(f"Showing 50 of {len(analyses)} analyses. Use search to find more.")
+    
+    # TAB 3: S3 Audio Recordings
+    with tab_s3_audio:
+        st.subheader("🎤 AWS S3 Audio Recordings")
+        st.caption("📁 **S3 Path:** `recordings/YYYY/MM/DD/*.mp3`")
+        
+        with st.spinner("Loading audio files from S3..."):
+            recordings = list_s3_recordings()
+        
+        if not recordings:
+            st.info("No audio recordings found in S3.")
+        else:
+            st.success(f"Found **{len(recordings)}** audio recordings in S3")
+            
+            # Search
+            search_audio = st.text_input("🔍 Search by filename", placeholder="e.g., Priya_Sharma", key="search_s3_audio")
+            
+            if search_audio:
+                recordings = [r for r in recordings if search_audio.lower() in r['filename'].lower()]
+                st.caption(f"Showing {len(recordings)} matching recordings")
+            
+            # Table view
+            recordings_data = []
+            for rec in sorted(recordings, key=lambda x: x['last_modified'], reverse=True)[:100]:
+                days_old = (datetime.now(rec['last_modified'].tzinfo) - rec['last_modified']).days
+                
+                if days_old >= 7:
+                    status_icon = "🔴"
+                elif days_old >= 4:
+                    status_icon = "🟡"
+                else:
+                    status_icon = "🟢"
+                
+                recordings_data.append({
+                    '': status_icon,
+                    'Filename': rec['filename'],
+                    'Size': f"{rec['size'] / (1024*1024):.2f} MB" if rec['size'] > 1024*1024 else f"{rec['size'] / 1024:.2f} KB",
+                    'Uploaded': rec['last_modified'].strftime('%Y-%m-%d'),
+                    'Age': f"{days_old} days"
+                })
+            
+            if recordings_data:
+                df = pd.DataFrame(recordings_data)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                
+                st.markdown("""
+                **Legend:** 🟢 Fresh (0-3 days) | 🟡 Expiring (4-6 days) | 🔴 Will delete (7+ days)
+                """)
+                
+                st.caption(f"Showing {min(len(recordings), 100)} most recent recordings")
 
 # Footer
 st.sidebar.markdown("---")
