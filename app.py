@@ -635,7 +635,7 @@ def check_for_duplicate_analysis(rm_name, client_name, call_date):
     return None
 
 def analyze_call_with_gpt(call_type, additional_context, manual_scores=None):
-    """Hybrid analysis: GPT or manual scores with Iron Lady context"""
+    """Enhanced GPT analysis with robust Iron Lady parameters and case study detection"""
     try:
         if manual_scores:
             return generate_analysis_from_scores(manual_scores, call_type, "Manual scoring with GPT-generated insights")
@@ -645,63 +645,196 @@ def analyze_call_with_gpt(call_type, additional_context, manual_scores=None):
         prompt = f"""{IRON_LADY_CONTEXT}
 
 **YOUR TASK:**
-Analyze this {call_type} call based on the Iron Lady methodology described above and the actual call content below.
+Analyze this {call_type} call based on the Iron Lady methodology. This is a CRITICAL analysis that will be used for RM coaching, so be EXTREMELY DETAILED and SPECIFIC.
 
 **CALL CONTENT:**
 {additional_context}
 
-**STRICT SCORING RULES:**
+**CRITICAL: IRON LADY CASE STUDIES TO DETECT**
+Listen carefully for these SPECIFIC participant names and their stories. If ANY of these names are mentioned, note it explicitly:
+
+**Featured Success Stories:**
+1. **Neha** - Big 4 Partner, scaled to leadership role, 5x income growth
+2. **Rashmi** - Senior Leader transformation, overcame imposter syndrome
+3. **Chandana** - Entrepreneur who scaled significantly, business breakthrough
+4. **Annapurna** - Built thriving consulting practice from scratch
+5. **Pushpalatha** - Corporate leadership breakthrough, C-suite transition
+6. **Tejaswini** - Successful entrepreneurship pivot, career transformation
+7. **Priya** - Small business to 7-figure success
+8. **Anjali** - Corporate to entrepreneur success
+9. **Meera** - Scaled from freelancer to agency owner
+10. **Kavita** - Built coaching empire
+
+**27 PRINCIPLES - EXACT NAMES TO DETECT:**
+If any of these are mentioned BY EXACT NAME or clear reference, note it:
+1. Differentiate Branding
+2. Shameless Pitching  
+3. Fearless Pricing
+4. Power of Community
+5. Strategic Networking
+6. Authentic Leadership
+7. Visibility Amplification
+8. Value-Based Selling
+9. BHAG / BHAG Mindset / Big Hairy Audacious Goals
+10. Imposter Syndrome / Imposter Syndrome Management
+11. Confident Communication
+12. Premium Positioning
+13. Ecosystem Building
+14. Thought Leadership
+15. Leveraged Growth
+16. Time Optimization
+17. Delegate & Elevate / Delegation
+18. Revenue Diversification
+19. Scalable Systems
+20. Authority Building
+21. Mastermind / Mastermind Power
+22. Emotional Intelligence
+23. Negotiation / Art of Negotiation
+24. Resilience / Resilience Building
+25. Executive Presence
+26. Decision-Making Framework
+27. Legacy / Legacy Creation
+
+**STRICT SCORING RULES WITH EXAMPLES:**
 
 **Rapport Building (0-20):**
-- 0-5: Cold, no name usage, transactional
-- 6-10: Basic greeting, name used 1-2 times
-- 11-15: Warm, name used 3-4 times, some empathy
-- 16-20: Exceptional warmth, name used 5+ times, high empathy, strong connection
+- 0-5: Cold, transactional, no name usage, no warmth
+- 6-10: Basic greeting, name used 1-2 times, minimal connection
+- 11-15: Warm tone, name used 3-4 times, shows empathy, asks personal questions
+- 16-18: Excellent warmth, name used 5-6 times, deep empathy, strong personal connection, vulnerability shared
+- 19-20: EXCEPTIONAL - name used 7+ times, creates safe space, participant opens up emotionally, feels like trusted friend
+
+**Name Usage Requirement:**
+- 0 times = MAX 5 points
+- 1-2 times = MAX 10 points  
+- 3-4 times = MAX 15 points
+- 5-6 times = 16-18 points
+- 7+ times = 19-20 points
 
 **Needs Discovery (0-25):**
-- 0-6: 0-2 questions asked
-- 7-12: 3-5 basic questions
-- 13-18: 6-7 strategic questions
-- 19-25: 8+ strategic questions with deep BHAG exploration
+- 0-6: 0-2 superficial questions, no exploration
+- 7-12: 3-5 basic questions, surface-level understanding
+- 13-18: 6-8 strategic questions, good exploration of current situation
+- 19-22: 9-12 deep questions, explores BHAG, pain points, dreams, fears
+- 23-25: 13+ questions with follow-ups, creates "aha moments", participant discovers own needs
+
+**Question Types Required for 20+:**
+- Discovery questions (current situation)
+- BHAG questions (dreams, goals)
+- Pain questions (what's not working)
+- Gap questions (what's missing)
+- Timeline questions (urgency)
+- Commitment questions (readiness)
 
 **Solution Presentation (0-25):**
-- 0-6: Program barely mentioned
-- 7-12: Basic program description
-- 13-18: Good explanation with 3-4 benefits
-- 19-25: Comprehensive presentation with program structure, community, outcomes, social proof
+- 0-6: Program barely mentioned, no structure explained
+- 7-12: Basic description, vague benefits
+- 13-18: Clear structure, 3-4 solid benefits, some differentiation
+- 19-22: Comprehensive presentation: structure, community, outcomes, social proof, ROI, certification
+- 23-25: MASTERCLASS - all above PLUS specific customization to participant's situation, paints vivid transformation picture
+
+**Must Include for 20+:**
+- Program structure (days, modules)
+- Community access
+- Specific outcomes/results
+- 2+ case studies
+- ROI / investment justification
+- Next steps
 
 **Objection Handling (0-15):**
-- 0-3: Concerns dismissed or ignored
-- 4-7: Basic acknowledgment
-- 8-11: Good handling with empathy
-- 12-15: Excellent handling with empathy, solutions, and case studies
+- 0-3: Objections dismissed, defensive, or ignored
+- 4-7: Acknowledges but doesn't resolve
+- 8-11: Good handling with empathy + logic
+- 12-13: Excellent handling with empathy + case study + reframe
+- 14-15: MASTERFUL - uses objection as opportunity, participant convinces themselves, ends with gratitude
 
 **Closing Technique (0-15):**
-- 0-3: No close or very weak
-- 4-7: Vague next steps
-- 8-11: Clear next steps
-- 12-15: "Powerfully invite" language used, explicit commitments secured
+- 0-3: No close or very weak "let me know"
+- 4-7: Vague next steps, no commitment
+- 8-11: Clear next steps stated
+- 12-13: "Powerfully invite" language + explicit commitments secured
+- 14-15: PERFECT CLOSE - assumptive language, multiple commitments, participant excited and ready
+
+**"Powerfully Invite" Examples:**
+- "I powerfully invite you to join us"
+- "I invite you powerfully to this journey"
+- "I see you in this community"
+- Must use word "invite" with power/conviction
 
 **Iron Lady Parameters (each 0-10):**
 
-**Profile Understanding:** Did they deeply understand background, experience, current challenges, and goals?
-**Credibility Building:** Did they mention Iron Lady community, success stories, certification, mentors?
-**Principles Usage:** How many of the 27 Principles were mentioned BY NAME? (0 names = max 3 points)
-**Case Studies Usage:** Did they share specific participant names? (No names = max 4 points)
-**Gap Creation:** Did they clearly articulate what's missing between current state and BHAG?
-**BHAG Fine Tuning:** Did they help participant dream bigger and expand their BHAG?
-**Urgency Creation:** Did they create FOMO, mention limited spots, immediate action needed?
-**Commitment Getting:** Did they get explicit commitments? (No commitments = max 4 points)
-**Contextualisation:** How well was everything personalized to participant's specific situation?
-**Excitement Creation:** Did they generate genuine enthusiasm about the transformation journey?
+**Profile Understanding (0-10):**
+- 0-3: Surface info only, no depth
+- 4-6: Understands current situation and some goals
+- 7-8: Deep understanding of background, challenges, aspirations
+- 9-10: COMPLETE PICTURE - understands participant's unique context, family situation, fears, dreams, timeline
 
-**CRITICAL PENALTIES:**
-- NO principles mentioned by name = Principles Usage max 3/10
-- NO case study names mentioned = Case Studies Usage max 4/10
-- NO BHAG exploration = BHAG Fine Tuning max 4/10
-- NO explicit commitments = Commitment Getting max 4/10
+**Credibility Building (0-10):**
+- 0-3: No community/results mentioned
+- 4-6: Mentions program exists
+- 7-8: Shares 1-2 success stories, mentions community
+- 9-10: STRONG CREDIBILITY - 3+ specific success stories with names, talks about alumni network, certification value, mentor access
 
-Respond ONLY with this JSON format:
+**Principles Usage (0-10):**
+- 0-3: NO principles mentioned by name (MAX 3 even if methodology is good)
+- 4-6: 1-2 principles mentioned by exact name
+- 7-8: 3-5 principles mentioned by exact name with context
+- 9-10: 6+ principles mentioned by exact name, woven naturally into conversation
+
+**CRITICAL: Score based on EXACT NAME MENTIONS, not just concepts!**
+
+**Case Studies Usage (0-10):**
+- 0-3: NO specific names mentioned (MAX 4 even if generic stories shared)
+- 4-6: 1 specific participant name with story
+- 7-8: 2-3 specific names with transformations
+- 9-10: 4+ specific names with detailed before/after stories
+
+**Names Required:** Neha, Rashmi, Chandana, Annapurna, Pushpalatha, Tejaswini, Priya, Anjali, Meera, Kavita, etc.
+
+**Gap Creation (0-10):**
+- 0-3: No gap identified
+- 4-6: Generic gap mentioned
+- 7-8: Specific gap articulated with numbers (revenue, time, impact)
+- 9-10: POWERFUL - gap quantified precisely, cost of inaction clear, creates urgency naturally
+
+**BHAG Fine Tuning (0-10):**
+- 0-3: No BHAG discussed (MAX 4)
+- 4-6: BHAG identified but not expanded
+- 7-8: BHAG explored and expanded 2-3x bigger
+- 9-10: TRANSFORMATIONAL - initial goal 5-10x bigger, participant sees new possibilities
+
+**Urgency Creation (0-10):**
+- 0-3: No urgency, open-ended
+- 4-6: Mentions program exists
+- 7-8: Limited spots or closing date mentioned
+- 9-10: STRONG FOMO - specific numbers (20 spots left), closes Friday, early bird pricing, payment plan ending
+
+**Commitment Getting (0-10):**
+- 0-3: No commitments asked (MAX 4)
+- 4-6: Vague "think about it"
+- 7-8: 1-2 explicit commitments secured
+- 9-10: MULTIPLE CLEAR COMMITMENTS - "I'll attend Day 2", "I'll be on follow-up call Tuesday 4pm", "I'll review investment options"
+
+**Contextualisation (0-10):**
+- 0-3: Generic pitch, could be anyone
+- 4-6: Some personalization
+- 7-8: Good customization to participant's situation
+- 9-10: PERFECTLY TAILORED - every example, every principle, every case study directly relevant to participant's exact situation
+
+**Excitement Creation (0-10):**
+- 0-3: Flat, no energy
+- 4-6: Somewhat enthusiastic
+- 7-8: Good energy, participant engaged
+- 9-10: CONTAGIOUS ENTHUSIASM - participant's voice changes, gets excited, asks more questions, wants to start now
+
+**CRITICAL PENALTIES (ENFORCE STRICTLY):**
+- NO principles mentioned by name = Principles Usage MAX 3/10
+- NO case study names = Case Studies Usage MAX 4/10
+- NO BHAG explored = BHAG Fine Tuning MAX 4/10
+- NO commitments = Commitment Getting MAX 4/10
+- "Powerfully invite" NOT used = Closing MAX 11/15
+
+**OUTPUT FORMAT - Respond ONLY with this JSON:**
 
 {{
     "core_dimensions": {{
@@ -723,14 +856,34 @@ Respond ONLY with this JSON format:
         "contextualisation": <0-10>,
         "excitement_creation": <0-10>
     }},
-    "justification": "Brief explanation of scores based on actual call performance"
+    "case_studies_mentioned": [
+        "List EXACT names mentioned (e.g., Neha, Rashmi, Chandana, etc.)",
+        "If NONE mentioned, return empty array []"
+    ],
+    "principles_mentioned": [
+        "List EXACT principle names mentioned (e.g., Fearless Pricing, BHAG Mindset)",
+        "Only include if mentioned BY NAME or clear direct reference",
+        "If NONE mentioned by name, return empty array []"
+    ],
+    "participant_name_usage_count": <exact number of times participant's name was used>,
+    "powerfully_invite_used": <true/false - was exact phrase "powerfully invite" or "invite powerfully" used?>,
+    "commitments_secured": [
+        "List EXPLICIT commitments obtained (e.g., 'Will attend Day 2', 'Follow-up call Tuesday 4pm')",
+        "If NONE secured, return empty array []"
+    ],
+    "bhag_initial": "Participant's initial goal/BHAG stated",
+    "bhag_expanded": "Expanded BHAG if RM helped dream bigger (or 'Not expanded' if same)",
+    "gap_quantified": "Specific gap identified with numbers if possible",
+    "urgency_tactics": ["List urgency tactics used: limited spots, closing date, etc."],
+    "justification": "2-3 sentences explaining the scores based on actual call content. Be specific with examples."
 }}
-"""
+
+**BE STRICT**: Most calls will score 50-70/100. Only truly exceptional calls following ALL guidelines score 80+. Don't be generous - be accurate and help RMs improve."""
 
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an expert Iron Lady sales call analyst trained on the Iron Lady methodology. Score calls strictly based on adherence to the 27 Principles framework, BHAG exploration, case study usage, and commitment getting. Be realistic and strict - most calls will score 50-70/100. Only exceptional calls following all guidelines score 80+."},
+                {"role": "system", "content": "You are an expert Iron Lady call analyst. You are STRICT and ACCURATE. You score based on what was ACTUALLY SAID, not what should have been said. You ALWAYS detect and list case study names and principle names if mentioned. You count participant name usage precisely. You are training RMs to be excellent, so your feedback must be honest and specific."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
@@ -740,11 +893,25 @@ Respond ONLY with this JSON format:
         analysis_text = response.choices[0].message.content
         scores_data = json.loads(analysis_text)
         
+        # Extract metadata for enhanced tracking
+        metadata = {
+            "case_studies_mentioned": scores_data.get('case_studies_mentioned', []),
+            "principles_mentioned": scores_data.get('principles_mentioned', []),
+            "participant_name_usage_count": scores_data.get('participant_name_usage_count', 0),
+            "powerfully_invite_used": scores_data.get('powerfully_invite_used', False),
+            "commitments_secured": scores_data.get('commitments_secured', []),
+            "bhag_initial": scores_data.get('bhag_initial', "Not captured"),
+            "bhag_expanded": scores_data.get('bhag_expanded', "Not expanded"),
+            "gap_quantified": scores_data.get('gap_quantified', "Not quantified"),
+            "urgency_tactics": scores_data.get('urgency_tactics', [])
+        }
+        
         return generate_analysis_from_scores(
             scores_data.get('core_dimensions', {}),
             call_type,
             scores_data.get('justification', 'GPT analysis based on Iron Lady methodology'),
-            scores_data.get('iron_lady_parameters', {})
+            scores_data.get('iron_lady_parameters', {}),
+            metadata  # Pass metadata
         )
     except Exception as e:
         st.error(f"GPT Error: {str(e)}")
@@ -753,8 +920,8 @@ Respond ONLY with this JSON format:
             "objection_handling": 8, "closing_technique": 8
         }, call_type, f"Error: {str(e)}")
 
-def generate_analysis_from_scores(core_dims, call_type, justification, il_params=None):
-    """Generate complete analysis from scores"""
+def generate_analysis_from_scores(core_dims, call_type, justification, il_params=None, metadata=None):
+    """Generate complete analysis from scores with enhanced tracking"""
     
     core_dimensions = {
         "rapport_building": core_dims.get("rapport_building", 10),
@@ -778,6 +945,22 @@ def generate_analysis_from_scores(core_dims, call_type, justification, il_params
         "commitment_getting": il_params.get("commitment_getting", 5),
         "contextualisation": il_params.get("contextualisation", 5),
         "excitement_creation": il_params.get("excitement_creation", 5)
+    }
+    
+    # Enhanced metadata tracking
+    if metadata is None:
+        metadata = {}
+    
+    enhanced_metadata = {
+        "case_studies_mentioned": metadata.get("case_studies_mentioned", []),
+        "principles_mentioned": metadata.get("principles_mentioned", []),
+        "participant_name_usage_count": metadata.get("participant_name_usage_count", 0),
+        "powerfully_invite_used": metadata.get("powerfully_invite_used", False),
+        "commitments_secured": metadata.get("commitments_secured", []),
+        "bhag_initial": metadata.get("bhag_initial", "Not captured"),
+        "bhag_expanded": metadata.get("bhag_expanded", "Not expanded"),
+        "gap_quantified": metadata.get("gap_quantified", "Not quantified"),
+        "urgency_tactics": metadata.get("urgency_tactics", [])
     }
     
     core_total = sum(core_dimensions.values())
@@ -875,6 +1058,35 @@ def generate_analysis_from_scores(core_dims, call_type, justification, il_params
         confidence = min(70, int(overall_score - 15))
         reasoning = f"Below Iron Lady standards ({overall_score:.0f}/100), coaching needed"
     
+    # Add special coaching for case studies and principles
+    if enhanced_metadata['case_studies_mentioned']:
+        best_moments.append(f"✅ Case studies used: {', '.join(enhanced_metadata['case_studies_mentioned'][:3])}")
+    else:
+        critical_gaps.append("❌ NO case study names mentioned")
+        il_coaching.insert(0, "🚨 CRITICAL: Use specific names (Neha, Rashmi, Chandana)")
+    
+    if enhanced_metadata['principles_mentioned']:
+        best_moments.append(f"✅ Principles used: {', '.join(enhanced_metadata['principles_mentioned'][:3])}")
+    else:
+        critical_gaps.append("❌ NO principles mentioned by name")
+        il_coaching.insert(0, "🚨 CRITICAL: Mention principles by exact name (e.g., 'Fearless Pricing')")
+    
+    if enhanced_metadata['powerfully_invite_used']:
+        best_moments.append("✅ Used 'Powerfully Invite' language")
+    else:
+        missed_opportunities.append("❌ Did NOT use 'Powerfully Invite'")
+        il_coaching.append("Say: 'I powerfully invite you to join this journey'")
+    
+    if enhanced_metadata['commitments_secured']:
+        best_moments.append(f"✅ Secured {len(enhanced_metadata['commitments_secured'])} commitments")
+    
+    if enhanced_metadata['participant_name_usage_count'] >= 5:
+        best_moments.append(f"✅ Used participant name {enhanced_metadata['participant_name_usage_count']} times")
+    elif enhanced_metadata['participant_name_usage_count'] > 0:
+        missed_opportunities.append(f"⚠️ Only used name {enhanced_metadata['participant_name_usage_count']} times (need 5+)")
+    else:
+        critical_gaps.append("❌ Participant name NOT used")
+    
     summary = f"{call_type} scored {overall_score:.1f}/100 with {methodology_compliance:.1f}% IL compliance. {justification}"
     
     return {
@@ -883,6 +1095,7 @@ def generate_analysis_from_scores(core_dims, call_type, justification, il_params
         "call_effectiveness": effectiveness,
         "core_dimensions": core_dimensions,
         "iron_lady_parameters": iron_lady_parameters,
+        "enhanced_tracking": enhanced_metadata,  # NEW: Enhanced tracking data
         "key_insights": {
             "strengths": strengths[:5],
             "critical_gaps": critical_gaps[:5],
@@ -1203,6 +1416,92 @@ elif page == "Upload & Analyze":
                 
                 st.markdown("**Executive Summary:**")
                 st.info(analysis['call_summary'])
+                
+                # Enhanced Tracking Section (NEW)
+                if 'enhanced_tracking' in analysis:
+                    st.markdown("---")
+                    st.markdown("### 🎯 Iron Lady Methodology Tracking")
+                    
+                    track = analysis['enhanced_tracking']
+                    
+                    col_a, col_b, col_c = st.columns(3)
+                    
+                    with col_a:
+                        st.markdown("**📚 Case Studies Used:**")
+                        if track['case_studies_mentioned']:
+                            for case in track['case_studies_mentioned']:
+                                st.success(f"✅ {case}")
+                            st.caption(f"Total: {len(track['case_studies_mentioned'])} case studies")
+                        else:
+                            st.error("❌ NO case studies mentioned")
+                            st.caption("🚨 CRITICAL: Use names like Neha, Rashmi, Chandana")
+                    
+                    with col_b:
+                        st.markdown("**💎 27 Principles Used:**")
+                        if track['principles_mentioned']:
+                            for principle in track['principles_mentioned']:
+                                st.success(f"✅ {principle}")
+                            st.caption(f"Total: {len(track['principles_mentioned'])} principles")
+                        else:
+                            st.error("❌ NO principles by name")
+                            st.caption("🚨 CRITICAL: Say exact names (e.g., 'Fearless Pricing')")
+                    
+                    with col_c:
+                        st.markdown("**🎤 Engagement Tracking:**")
+                        
+                        # Name usage
+                        name_count = track.get('participant_name_usage_count', 0)
+                        if name_count >= 5:
+                            st.success(f"✅ Name used {name_count} times")
+                        elif name_count > 0:
+                            st.warning(f"⚠️ Name used only {name_count} times")
+                            st.caption("Target: 5+ times")
+                        else:
+                            st.error("❌ Name NOT used")
+                        
+                        # Powerfully invite
+                        if track.get('powerfully_invite_used'):
+                            st.success("✅ 'Powerfully Invite' used")
+                        else:
+                            st.error("❌ 'Powerfully Invite' NOT used")
+                        
+                        # Commitments
+                        commits = track.get('commitments_secured', [])
+                        if commits:
+                            st.success(f"✅ {len(commits)} commitments secured")
+                        else:
+                            st.error("❌ NO commitments secured")
+                    
+                    # BHAG and Gap (expandable)
+                    with st.expander("🎯 BHAG & Gap Analysis", expanded=False):
+                        col_x, col_y = st.columns(2)
+                        with col_x:
+                            st.markdown("**BHAG Journey:**")
+                            st.write(f"**Initial:** {track.get('bhag_initial', 'Not captured')}")
+                            st.write(f"**Expanded:** {track.get('bhag_expanded', 'Not expanded')}")
+                            if track.get('bhag_expanded') != 'Not expanded' and track.get('bhag_expanded') != track.get('bhag_initial'):
+                                st.success("✅ BHAG expanded successfully")
+                            else:
+                                st.warning("⚠️ BHAG not expanded")
+                        
+                        with col_y:
+                            st.markdown("**Gap & Urgency:**")
+                            st.write(f"**Gap:** {track.get('gap_quantified', 'Not quantified')}")
+                            urgency = track.get('urgency_tactics', [])
+                            if urgency:
+                                st.write("**Urgency tactics:**")
+                                for tactic in urgency:
+                                    st.write(f"• {tactic}")
+                            else:
+                                st.warning("⚠️ No urgency created")
+                    
+                    # Commitments detail (expandable)
+                    if commits:
+                        with st.expander("✅ Commitments Secured", expanded=False):
+                            for i, commit in enumerate(commits, 1):
+                                st.write(f"{i}. {commit}")
+                
+                st.markdown("---")
                 
                 # Core Dimensions
                 st.markdown("### 🎯 Core Dimensions")
