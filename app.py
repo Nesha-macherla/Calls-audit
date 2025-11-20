@@ -1087,7 +1087,13 @@ def generate_analysis_from_scores(core_dims, call_type, justification, il_params
     else:
         critical_gaps.append("❌ Participant name NOT used")
     
+    # Build highlighted summary with case studies
     summary = f"{call_type} scored {overall_score:.1f}/100 with {methodology_compliance:.1f}% IL compliance. {justification}"
+    
+    # Add case study highlights if any were mentioned
+    if enhanced_metadata['case_studies_mentioned']:
+        case_studies_str = ", ".join(enhanced_metadata['case_studies_mentioned'])
+        summary += f" 🌟 Case studies mentioned: {case_studies_str}."
     
     return {
         "overall_score": round(overall_score, 1),
@@ -1417,7 +1423,36 @@ elif page == "Upload & Analyze":
                 st.markdown("**Executive Summary:**")
                 st.info(analysis['call_summary'])
                 
-                # Enhanced Tracking Section (NEW)
+                # HIGHLIGHT Case Studies & Principles (NEW!)
+                if 'enhanced_tracking' in analysis:
+                    track = analysis['enhanced_tracking']
+                    
+                    # Show prominent highlights if any were used
+                    if track['case_studies_mentioned'] or track['principles_mentioned']:
+                        st.markdown("---")
+                        col_highlight1, col_highlight2 = st.columns(2)
+                        
+                        with col_highlight1:
+                            if track['case_studies_mentioned']:
+                                st.success("### 🌟 Case Studies Used in This Call")
+                                for case in track['case_studies_mentioned']:
+                                    st.markdown(f"### ✅ **{case}**")
+                                st.caption(f"Total: {len(track['case_studies_mentioned'])} success stories shared")
+                            else:
+                                st.error("### ❌ No Case Studies Mentioned")
+                                st.caption("Use names: Neha, Rashmi, Chandana, Annapurna, etc.")
+                        
+                        with col_highlight2:
+                            if track['principles_mentioned']:
+                                st.success("### 💎 Principles Used in This Call")
+                                for principle in track['principles_mentioned']:
+                                    st.markdown(f"### ✅ **{principle}**")
+                                st.caption(f"Total: {len(track['principles_mentioned'])} principles by name")
+                            else:
+                                st.error("### ❌ No Principles by Name")
+                                st.caption("Say: 'Fearless Pricing', 'BHAG Mindset', etc.")
+                
+                # Enhanced Tracking Section
                 if 'enhanced_tracking' in analysis:
                     st.markdown("---")
                     st.markdown("### 🎯 Iron Lady Methodology Tracking")
@@ -1517,19 +1552,63 @@ elif page == "Upload & Analyze":
                 ])
                 st.dataframe(core_df, use_container_width=True, hide_index=True)
                 
-                # IL Parameters
-                st.markdown("### 💎 Iron Lady Parameters")
-                il_df = pd.DataFrame([
-                    {
-                        "Parameter": k.replace('_', ' ').title(), 
-                        "Score": v, 
-                        "Max": 10,
-                        "%": f"{(v/10*100):.0f}%",
-                        "Status": "🟢" if (v/10*100) >= 80 else "🟡" if (v/10*100) >= 60 else "🔴"
-                    }
-                    for k, v in analysis['iron_lady_parameters'].items()
-                ])
-                st.dataframe(il_df, use_container_width=True, hide_index=True)
+                # IL Parameters - CHECKBOX DISPLAY (NEW!)
+                st.markdown("### 💎 Iron Lady Parameters Checklist")
+                
+                # Create checkbox grid
+                col1, col2 = st.columns(2)
+                
+                il_params_list = list(analysis['iron_lady_parameters'].items())
+                mid_point = len(il_params_list) // 2
+                
+                with col1:
+                    for param, score in il_params_list[:mid_point]:
+                        param_name = param.replace('_', ' ').title()
+                        
+                        # Determine checkbox
+                        if score >= 5:
+                            checkbox = "✅"  # Green tick
+                            color = "green"
+                        else:
+                            checkbox = "❌"  # Red X
+                            color = "red"
+                        
+                        # Display with color
+                        st.markdown(f":{color}[{checkbox} **{param_name}** ({score}/10)]")
+                
+                with col2:
+                    for param, score in il_params_list[mid_point:]:
+                        param_name = param.replace('_', ' ').title()
+                        
+                        # Determine checkbox
+                        if score >= 5:
+                            checkbox = "✅"  # Green tick
+                            color = "green"
+                        else:
+                            checkbox = "❌"  # Red X
+                            color = "red"
+                        
+                        # Display with color
+                        st.markdown(f":{color}[{checkbox} **{param_name}** ({score}/10)]")
+                
+                # Summary stats
+                st.markdown("---")
+                passed = sum(1 for score in analysis['iron_lady_parameters'].values() if score >= 5)
+                total = len(analysis['iron_lady_parameters'])
+                pass_rate = (passed / total) * 100
+                
+                col_x, col_y, col_z = st.columns(3)
+                with col_x:
+                    st.metric("Passed (≥5)", f"{passed}/{total}")
+                with col_y:
+                    st.metric("Pass Rate", f"{pass_rate:.0f}%")
+                with col_z:
+                    if pass_rate >= 80:
+                        st.success("🌟 Excellent!")
+                    elif pass_rate >= 60:
+                        st.info("👍 Good")
+                    else:
+                        st.warning("⚠️ Needs Work")
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1636,6 +1715,43 @@ elif page == "Dashboard":
                 st.markdown("**Top 3 Gaps:**")
                 for g in analysis.get('key_insights', {}).get('critical_gaps', [])[:3]:
                     st.write(f"✗ {g}")
+                
+                # Case Studies & Principles Checklist (NEW!)
+                if 'enhanced_tracking' in analysis:
+                    st.markdown("---")
+                    st.markdown("**🎯 Methodology Checklist:**")
+                    
+                    track = analysis['enhanced_tracking']
+                    col_cs, col_pr = st.columns(2)
+                    
+                    with col_cs:
+                        case_studies = track.get('case_studies_mentioned', [])
+                        if case_studies:
+                            st.success(f"✅ Case Studies: {', '.join(case_studies[:2])}")
+                        else:
+                            st.error("❌ No case studies used")
+                    
+                    with col_pr:
+                        principles = track.get('principles_mentioned', [])
+                        if principles:
+                            st.success(f"✅ Principles: {', '.join(principles[:2])}")
+                        else:
+                            st.error("❌ No principles by name")
+                    
+                    # Key methodology checks
+                    col_m1, col_m2 = st.columns(2)
+                    with col_m1:
+                        if track.get('powerfully_invite_used'):
+                            st.success("✅ 'Powerfully Invite' used")
+                        else:
+                            st.error("❌ 'Powerfully Invite' missing")
+                    
+                    with col_m2:
+                        commits = len(track.get('commitments_secured', []))
+                        if commits > 0:
+                            st.success(f"✅ {commits} commitments secured")
+                        else:
+                            st.error("❌ No commitments secured")
                 
                 # Action buttons
                 col_a, col_b, col_c = st.columns([1, 1, 2])
