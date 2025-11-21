@@ -653,17 +653,96 @@ Analyze this {call_type} call based on the Iron Lady methodology. This is a CRIT
 **CRITICAL: IRON LADY CASE STUDIES TO DETECT**
 Listen carefully for these SPECIFIC participant names and their stories. If ANY of these names are mentioned, note it explicitly:
 
-**Featured Success Stories:**
-1. **Neha** - Big 4 Partner, scaled to leadership role, 5x income growth
-2. **Rashmi** - Senior Leader transformation, overcame imposter syndrome
-3. **Chandana** - Entrepreneur who scaled significantly, business breakthrough
-4. **Annapurna** - Built thriving consulting practice from scratch
-5. **Pushpalatha** - Corporate leadership breakthrough, C-suite transition
-6. **Tejaswini** - Successful entrepreneurship pivot, career transformation
-7. **Priya** - Small business to 7-figure success
-8. **Anjali** - Corporate to entrepreneur success
-9. **Meera** - Scaled from freelancer to agency owner
-10. **Kavita** - Built coaching empire
+**Featured Success Stories (Listen for these EXACT names):**
+1. **Neha Aggarwal** - Head Sales CMS IT, 30% hike, met Sheryl Sandberg
+2. **Rashmi** - Senior Leader, ₹30L to ₹75L, imposter syndrome overcome
+3. **Chandana** - Papad entrepreneur, Taj Hotels contract, orders till 2022
+4. **Annapurna** - Founder Emotionalytics, B2B entrepreneur from scratch
+5. **Pushpalatha** - Co-Founder Garbhagudi, ₹1.4cr to 100cr valuation
+6. **Tejaswini Ramisetti** - QA Lead, 20% hike in 1 month
+7. **Anusha Stephen** - Talking Canvas founder, 20x revenue growth
+8. **Anjali Iyer** - Big 4, skip-level promotion achieved
+9. **Jigisha** - Content writer to brand storyteller, 2x scale
+10. **Nilmani Gandhi** - Arbitrator, ODR specialist, global brand
+11. **Amala** - Social entrepreneur, raised ₹5L in 3 weeks
+12. **Sarika Bharani** - Yoga business, doubled customers in 3 months
+13. **Gouthami Reddy** - Professor to green café, 3 catering orders
+14. **Dr. Roopashree** - Ayurvedic doctor, viral video 46k views
+15. **Smita Anand** - Quality Director, escaped politics, new role
+16. **Smita Kulkarni** - Sales trainer, 4x revenue in 3 months
+17. **Vijayalakshmi Gadepalli** - IIT Mumbai, promoted to Senior PM
+18. **Anupama Padhi** - Dhaani Food founder, 40% revenue increase
+19. **Vinaya Shenoy** - Fabric enhancement, doubled customers
+20. **Surekha Ritesh** - HR consultant, first 3 batches in 3 months
+21. **Prabha Sundar** - DPS Dubai Principal, Power Within program
+22. **Prapoorna** - Exploridge founder, brain mapping expert
+23. **Poornima SP** - XLRI grad, VP HR with 40% hike goal
+24. **Aditi Chauhan** - Football captain, She Kicks academy
+25. **Anuradha Sridhar** - Teacher training, Head at Aditya Birla
+26. **Malini Gulati** - Deputy Director JGU, double promotion
+27. **Anupama Bhoopalam** - Architect, 2 decades furniture design
+28. **Sajitha Thomas** - HR strategist, promoted within and outside
+29. **Rani Suneela Motru** - Portfolio Manager, innovation approved
+30. **Kavana Mayur** - Architect, Ace Business 2020 winner
+31. **Leena Kotian** - Financial advisor, scaled with pitching
+32. **Yashwanti Talreja** - Yash Investment founder, more clients
+33. **Nagachaitanya** - QA Automation Broadcom, promotion in 2 months
+34. **Meenakshi Talsera** - Self-worth influencer, life coach
+35. **Lakshmi N** - HR consultant, scaled business big time
+36. **Bhuvaneshwari** - Doubled revenue in 3 months
+37. **Gayathri Bhat** - Education entrepreneur, 40 first customers
+38. **Deepshikha Bhowmik** - 65% hike in new job
+39. **Chaula Trivedi** - Architect, 10 clients monthly freelance
+40. **Anubha Doshi** - Artsphere founder, dance + psychology
+41. **Sharmishta Chatterjee** - Data Scientist, Google Developer Expert
+42. **Palak Jajoo** - Beauty expert, Leimo brand
+43. **Rimjhim Mukherjee** - [Graduate]
+44. **Padmini Vedula** - Overachieved by 6 crores in 3 months
+45. **Nidhi Gandhi** - Fashion, ₹40L painting sales, Studio N
+46. **Anu Somani** - Director CRM Inland World Logistics
+47. **Pavithra Krishnamurthy** - [Graduate]
+48. **Jareena** - [Graduate]
+49. **Umaa Vemula** - UniQ Academy, 10 new branches (beat BHAG of 3)
+50. **Bharti Chauhan** - Mrs. United Nations Ambassador, mind trainer
+51. **Hemalata** - Network marketer, 6-figure income monthly
+52. **Anuradha** - Network marketer, went international
+53. **Anjana Sateeshan** - Mathematics educator, 30+ years
+54. **Ritu Masand** - Banking operations, 20 years experience
+55. **Neetu Punhani** - Tooth Doctor CEO, implant surgery specialist
+56. **Ramya Bhaskar** - Academician, education industry
+57. **Iva Athavia** - Cancer survivor, raised ₹1 crore for NGO Suadha
+58. **Harpreet Kaur** - IT professional, job after 2-year break
+59. **Vartika Chaturvedi** - Tourism expert, global citizenship
+60. **Lakshmi Srinath** - Filmmaker, started own channel
+61. **Srikirti** - Product Manager, double promotion with hike
+62. **Roshni Rajshekhar** - [Graduate]
+63. **Jayaprabha Rajesh** - Alumni, Covid recovery story
+64. **Neetee Pawa** - Cyber Security IBM, 55% hike
+65. **Manisha Sharma** - Animation industry
+66. **Shital Suryavanshi** - Healer, mind coach, book writer
+67. **Harvinder Kaur** - CFO Rajasthan Royals IPL
+68. **Naveena Priya Patta** - [Graduate]
+69. **Jayantika Ganguly** - Corporate lawyer to stress coach
+70. **Ashwini** - CA by profession, 40% growth in 6 months
+71. **Rekha Rao** - Director Barclays, was HSBC Senior VP
+72. **Neha Shrimali** - POSH trainer, impacted 1 lakh individuals
+73. **Shailaja** - CSR Head Tata Motors, 2.5 decades experience
+74. **Reshmi Dasgupta** - New job after 8-year break
+75. **Harsha Keluskar** - Associate VP HR, created new designation
+76. **Suhana** - Assistant Manager, PhD papers published
+77. **Dr. Bhavi Mody** - Vrudhi Holistic Healthcare founder
+78. **Dr. Raka Ghosh** - IIT Mumbai doctorate, drug design
+79. **Shobha Patil** - CEO 1000cr valuation company, 500+ employees
+80. **Kratika Jain** - Project Manager, 52% hike in 3 weeks
+81. **Aswati Dorje** - DCP Police, gold medalist
+82. **Arunima Singh** - CDO Marksmen Media
+83. **Roshni Dattagupta** - Global Cyber Security Expert
+84. **Dr. Anindya** - Ophthalmologist
+85. **Rownmani** - Quality Specialist
+86. **Sujata Sumant** - Head Marketing Zee TV, 80% hike
+87. **Kavita Duragkar** - KP INN co-founder, 3 investors
+88. **Arti Hegganavar** - 100% hike at HCL
+89. **Sadhana Chigurupali** - Graphic designer, digital marketing
 
 **27 PRINCIPLES - EXACT NAMES TO DETECT:**
 If any of these are mentioned BY EXACT NAME or clear reference, note it:
@@ -875,7 +954,8 @@ If any of these are mentioned BY EXACT NAME or clear reference, note it:
     "bhag_expanded": "Expanded BHAG if RM helped dream bigger (or 'Not expanded' if same)",
     "gap_quantified": "Specific gap identified with numbers if possible",
     "urgency_tactics": ["List urgency tactics used: limited spots, closing date, etc."],
-    "justification": "2-3 sentences explaining the scores based on actual call content. Be specific with examples."
+    "call_quality_summary": "2-3 sentences summarizing the OVERALL QUALITY of this call. What made it good or bad? Be specific about what the RM did well and what they missed. Mention SPECIFIC moments from the call.",
+    "justification": "1-2 sentences explaining the scores. Focus on the MOST CRITICAL gaps or strengths."
 }}
 
 **BE STRICT**: Most calls will score 50-70/100. Only truly exceptional calls following ALL guidelines score 80+. Don't be generous - be accurate and help RMs improve."""
@@ -906,10 +986,13 @@ If any of these are mentioned BY EXACT NAME or clear reference, note it:
             "urgency_tactics": scores_data.get('urgency_tactics', [])
         }
         
+        # Use improved call quality summary from GPT
+        call_summary = scores_data.get('call_quality_summary', scores_data.get('justification', 'GPT analysis based on Iron Lady methodology'))
+        
         return generate_analysis_from_scores(
             scores_data.get('core_dimensions', {}),
             call_type,
-            scores_data.get('justification', 'GPT analysis based on Iron Lady methodology'),
+            call_summary,
             scores_data.get('iron_lady_parameters', {}),
             metadata  # Pass metadata
         )
@@ -1409,16 +1492,43 @@ elif page == "Upload & Analyze":
                 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    score_color = "🟢" if analysis['overall_score'] >= 80 else "🟡" if analysis['overall_score'] >= 60 else "🔴"
-                    st.metric("Overall Score", f"{score_color} {analysis['overall_score']:.1f}/100")
+                    # Color-coded quality only (no numbers)
+                    if analysis['overall_score'] >= 80:
+                        st.success("### ✅ Excellent Call")
+                    elif analysis['overall_score'] >= 65:
+                        st.info("### 🟡 Good Call")
+                    else:
+                        st.error("### ❌ Needs Improvement")
+                
                 with col2:
-                    st.metric("IL Compliance", f"{analysis['methodology_compliance']:.1f}%")
+                    # IL Compliance as color
+                    if analysis['methodology_compliance'] >= 75:
+                        st.success("✅ Strong IL Adherence")
+                    elif analysis['methodology_compliance'] >= 55:
+                        st.warning("🟡 Moderate IL Usage")
+                    else:
+                        st.error("❌ Weak IL Methodology")
+                
                 with col3:
-                    st.metric("Effectiveness", analysis['call_effectiveness'])
+                    effectiveness = analysis['call_effectiveness']
+                    if effectiveness == "Excellent":
+                        st.success(f"✅ {effectiveness}")
+                    elif effectiveness == "Good":
+                        st.info(f"🟡 {effectiveness}")
+                    else:
+                        st.warning(f"⚠️ {effectiveness}")
+                
                 with col4:
                     pred_emoji = {"registration_expected": "🎉", "follow_up_needed": "📞", "needs_improvement": "⚠️"}
                     pred_result = analysis['outcome_prediction']['likely_result']
-                    st.metric("Prediction", f"{pred_emoji.get(pred_result, '📊')} {pred_result.replace('_', ' ').title()}")
+                    pred_display = pred_result.replace('_', ' ').title()
+                    
+                    if pred_result == "registration_expected":
+                        st.success(f"🎉 {pred_display}")
+                    elif pred_result == "follow_up_needed":
+                        st.info(f"📞 {pred_display}")
+                    else:
+                        st.warning(f"⚠️ {pred_display}")
                 
                 st.markdown("**Executive Summary:**")
                 st.info(analysis['call_summary'])
@@ -1538,19 +1648,53 @@ elif page == "Upload & Analyze":
                 
                 st.markdown("---")
                 
-                # Core Dimensions
+                # Core Dimensions - CHECKBOX DISPLAY (NO SCORES)
                 st.markdown("### 🎯 Core Dimensions")
-                core_df = pd.DataFrame([
-                    {
-                        "Dimension": k.replace('_', ' ').title(), 
-                        "Score": v, 
-                        "Max": IRON_LADY_PARAMETERS["Core Quality Dimensions"][k]["weight"],
-                        "%": f"{(v/IRON_LADY_PARAMETERS['Core Quality Dimensions'][k]['weight']*100):.0f}%",
-                        "Status": "🟢" if (v/IRON_LADY_PARAMETERS['Core Quality Dimensions'][k]['weight']*100) >= 80 else "🟡" if (v/IRON_LADY_PARAMETERS['Core Quality Dimensions'][k]['weight']*100) >= 60 else "🔴"
-                    }
-                    for k, v in analysis['core_dimensions'].items()
-                ])
-                st.dataframe(core_df, use_container_width=True, hide_index=True)
+                
+                col_cd1, col_cd2 = st.columns(2)
+                
+                core_items = list(analysis['core_dimensions'].items())
+                core_mid = len(core_items) // 2
+                
+                with col_cd1:
+                    for param, score in core_items[:core_mid]:
+                        param_name = param.replace('_', ' ').title()
+                        max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][param]["weight"]
+                        percentage = (score / max_score) * 100
+                        
+                        # Three-tier system for core dimensions too
+                        if percentage >= 75:
+                            checkbox = "✅"  # Green - Excellent
+                            color = "green"
+                        elif percentage >= 55:
+                            checkbox = "🟡"  # Yellow - Adequate
+                            color = "orange"
+                        else:
+                            checkbox = "❌"  # Red - Poor
+                            color = "red"
+                        
+                        st.markdown(f":{color}[{checkbox} **{param_name}**]")
+                
+                with col_cd2:
+                    for param, score in core_items[core_mid:]:
+                        param_name = param.replace('_', ' ').title()
+                        max_score = IRON_LADY_PARAMETERS["Core Quality Dimensions"][param]["weight"]
+                        percentage = (score / max_score) * 100
+                        
+                        # Three-tier system
+                        if percentage >= 75:
+                            checkbox = "✅"  # Green - Excellent
+                            color = "green"
+                        elif percentage >= 55:
+                            checkbox = "🟡"  # Yellow - Adequate
+                            color = "orange"
+                        else:
+                            checkbox = "❌"  # Red - Poor
+                            color = "red"
+                        
+                        st.markdown(f":{color}[{checkbox} **{param_name}**]")
+                
+                st.markdown("---")
                 
                 # IL Parameters - CHECKBOX DISPLAY (NEW!)
                 st.markdown("### 💎 Iron Lady Parameters Checklist")
@@ -1565,50 +1709,60 @@ elif page == "Upload & Analyze":
                     for param, score in il_params_list[:mid_point]:
                         param_name = param.replace('_', ' ').title()
                         
-                        # Determine checkbox
-                        if score >= 5:
-                            checkbox = "✅"  # Green tick
+                        # Determine checkbox based on score
+                        if score >= 7:
+                            checkbox = "✅"  # Green tick - Good
                             color = "green"
+                        elif score >= 5:
+                            checkbox = "🟡"  # Yellow - Adequate
+                            color = "orange"
                         else:
-                            checkbox = "❌"  # Red X
+                            checkbox = "❌"  # Red X - Poor
                             color = "red"
                         
-                        # Display with color
-                        st.markdown(f":{color}[{checkbox} **{param_name}** ({score}/10)]")
+                        # Display with color (NO SCORE NUMBERS)
+                        st.markdown(f":{color}[{checkbox} **{param_name}**]")
                 
                 with col2:
                     for param, score in il_params_list[mid_point:]:
                         param_name = param.replace('_', ' ').title()
                         
-                        # Determine checkbox
-                        if score >= 5:
-                            checkbox = "✅"  # Green tick
+                        # Determine checkbox based on score
+                        if score >= 7:
+                            checkbox = "✅"  # Green tick - Good
                             color = "green"
+                        elif score >= 5:
+                            checkbox = "🟡"  # Yellow - Adequate
+                            color = "orange"
                         else:
-                            checkbox = "❌"  # Red X
+                            checkbox = "❌"  # Red X - Poor
                             color = "red"
                         
-                        # Display with color
-                        st.markdown(f":{color}[{checkbox} **{param_name}** ({score}/10)]")
+                        # Display with color (NO SCORE NUMBERS)
+                        st.markdown(f":{color}[{checkbox} **{param_name}**]")
                 
                 # Summary stats
                 st.markdown("---")
-                passed = sum(1 for score in analysis['iron_lady_parameters'].values() if score >= 5)
+                excellent = sum(1 for score in analysis['iron_lady_parameters'].values() if score >= 7)
+                adequate = sum(1 for score in analysis['iron_lady_parameters'].values() if 5 <= score < 7)
+                poor = sum(1 for score in analysis['iron_lady_parameters'].values() if score < 5)
                 total = len(analysis['iron_lady_parameters'])
-                pass_rate = (passed / total) * 100
                 
-                col_x, col_y, col_z = st.columns(3)
+                col_x, col_y, col_z, col_w = st.columns(4)
                 with col_x:
-                    st.metric("Passed (≥5)", f"{passed}/{total}")
+                    st.metric("✅ Excellent (≥7)", f"{excellent}/{total}")
                 with col_y:
-                    st.metric("Pass Rate", f"{pass_rate:.0f}%")
+                    st.metric("🟡 Adequate (5-6)", f"{adequate}/{total}")
                 with col_z:
+                    st.metric("❌ Poor (<5)", f"{poor}/{total}")
+                with col_w:
+                    pass_rate = ((excellent + adequate) / total) * 100
                     if pass_rate >= 80:
-                        st.success("🌟 Excellent!")
+                        st.success(f"🌟 {pass_rate:.0f}% Pass")
                     elif pass_rate >= 60:
-                        st.info("👍 Good")
+                        st.info(f"👍 {pass_rate:.0f}% Pass")
                     else:
-                        st.warning("⚠️ Needs Work")
+                        st.warning(f"⚠️ {pass_rate:.0f}% Pass")
                 
                 col1, col2 = st.columns(2)
                 with col1:
