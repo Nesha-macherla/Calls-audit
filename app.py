@@ -171,6 +171,25 @@ def download_s3_analysis(s3_key):
         st.error(f"Error downloading analysis: {str(e)}")
         return None
 
+def generate_s3_presigned_url(s3_key, expiration=3600):
+    """Generate a presigned URL for S3 object (for audio playback)"""
+    s3_client = get_s3_client()
+    bucket_name = get_bucket_name()
+    
+    if not s3_client or not bucket_name:
+        return None
+    
+    try:
+        url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket_name, 'Key': s3_key},
+            ExpiresIn=expiration
+        )
+        return url
+    except Exception as e:
+        st.error(f"Error generating presigned URL: {str(e)}")
+        return None
+
 def get_s3_analysis(record_id, rm_name, call_date):
     """Retrieve analysis JSON from S3 for a specific call"""
     s3_client = get_s3_client()
@@ -2447,35 +2466,82 @@ elif page == "Admin View":
                 recordings = [r for r in recordings if search_audio.lower() in r['filename'].lower()]
                 st.caption(f"Showing {len(recordings)} matching recordings")
             
-            # Table view
-            recordings_data = []
-            for rec in sorted(recordings, key=lambda x: x['last_modified'], reverse=True)[:100]:
+            st.markdown("---")
+            
+            # Display recordings with audio players
+            for idx, rec in enumerate(sorted(recordings, key=lambda x: x['last_modified'], reverse=True)[:50]):
                 days_old = (datetime.now(rec['last_modified'].tzinfo) - rec['last_modified']).days
                 
                 if days_old >= 7:
                     status_icon = "🔴"
+                    status_text = "Will delete"
                 elif days_old >= 4:
                     status_icon = "🟡"
+                    status_text = "Expiring soon"
                 else:
                     status_icon = "🟢"
+                    status_text = "Fresh"
                 
-                recordings_data.append({
-                    '': status_icon,
-                    'Filename': rec['filename'],
-                    'Size': f"{rec['size'] / (1024*1024):.2f} MB" if rec['size'] > 1024*1024 else f"{rec['size'] / 1024:.2f} KB",
-                    'Uploaded': rec['last_modified'].strftime('%Y-%m-%d'),
-                    'Age': f"{days_old} days"
-                })
+                size_display = f"{rec['size'] / (1024*1024):.2f} MB" if rec['size'] > 1024*1024 else f"{rec['size'] / 1024:.2f} KB"
+                
+                with st.expander(f"{status_icon} {rec['filename']} - {size_display} - {status_text} ({days_old} days old)"):
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.write(f"**📁 Filename:** {rec['filename']}")
+                        st.write(f"**📅 Uploaded:** {rec['last_modified'].strftime('%Y-%m-%d %H:%M:%S')}")
+                        st.write(f"**📊 Size:** {size_display}")
+                        st.write(f"**⏰ Age:** {days_old} days")
+                        st.write(f"**🎯 Status:** {status_text}")
+                        st.caption(f"S3 Path: `{rec['key']}`")
+                    
+                    with col2:
+                        st.write("**🎧 Audio Controls:**")
+                        
+                        # Auto-generate URL on expand
+                        if f"audio_url_{idx}" not in st.session_state:
+                            with st.spinner("Loading audio..."):
+                                audio_url = generate_s3_presigned_url(rec['key'], expiration=3600)
+                                if audio_url:
+                                    st.session_state[f"audio_url_{idx}"] = audio_url
+                        
+                        # Download button
+                        if f"audio_url_{idx}" in st.session_state:
+                            audio_url = st.session_state[f"audio_url_{idx}"]
+                            st.markdown(f"[📥 Download Audio]({audio_url})")
+                            
+                            # Refresh URL button
+                            if st.button("🔄 Refresh Link", key=f"refresh_{idx}", use_container_width=True):
+                                audio_url = generate_s3_presigned_url(rec['key'], expiration=3600)
+                                if audio_url:
+                                    st.session_state[f"audio_url_{idx}"] = audio_url
+                                    st.success("✅ Link refreshed!")
+                                    st.rerun()
+                    
+                    # Display audio player prominently
+                    if f"audio_url_{idx}" in st.session_state:
+                        st.markdown("---")
+                        st.markdown("### 🎧 Play Audio Recording")
+                        
+                        audio_url = st.session_state[f"audio_url_{idx}"]
+                        
+                        # Display audio player
+                        st.audio(audio_url, format='audio/mp3')
+                        
+                        st.caption("💡 Audio link expires in 1 hour. Click 'Refresh Link' to generate a new one.")
+                    else:
+                        st.warning("⚠️ Could not load audio. Click 'Refresh Link' to try again.")
             
-            if recordings_data:
-                df = pd.DataFrame(recordings_data)
-                st.dataframe(df, use_container_width=True, hide_index=True)
-                
-                st.markdown("""
-                **Legend:** 🟢 Fresh (0-3 days) | 🟡 Expiring (4-6 days) | 🔴 Will delete (7+ days)
-                """)
-                
-                st.caption(f"Showing {min(len(recordings), 100)} most recent recordings")
+            st.markdown("---")
+            st.markdown("""
+            **Legend:** 
+            - 🟢 **Fresh** (0-3 days) - Recently uploaded
+            - 🟡 **Expiring** (4-6 days) - Will be deleted in 1-3 days
+            - 🔴 **Will delete** (7+ days) - Scheduled for deletion
+            """)
+            
+            st.caption(f"💡 Showing {min(len(recordings), 50)} most recent recordings")
+            st.caption("🎵 Click 'Play Audio' to listen to any recording in the app")
 
 # Footer
 st.sidebar.markdown("---")
