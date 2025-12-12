@@ -653,16 +653,79 @@ def check_for_duplicate_analysis(rm_name, client_name, call_date):
             return record
     return None
 
-def analyze_call_with_gpt(call_type, additional_context, manual_scores=None):
-    """Enhanced GPT analysis with robust Iron Lady parameters and case study detection"""
+# Admin Feedback Functions
+def get_rm_feedback_history(rm_name):
+    """Get previous admin feedback for a specific RM"""
+    if not rm_name:
+        return []
+    
+    db = load_db()
+    rm_feedbacks = []
+    
+    for record in db:
+        if record.get('rm_name') == rm_name and record.get('admin_feedback'):
+            rm_feedbacks.append({
+                'date': record.get('call_date'),
+                'score': record.get('analysis', {}).get('overall_score', 0),
+                'feedback': record.get('admin_feedback', {}).get('feedback_text', ''),
+                'focus_areas': record.get('admin_feedback', {}).get('focus_areas', ''),
+                'call_type': record.get('call_type')
+            })
+    
+    # Sort by date (most recent last)
+    rm_feedbacks.sort(key=lambda x: x['date'])
+    return rm_feedbacks
+
+def save_admin_feedback(record_id, feedback_text, focus_areas, rating):
+    """Save admin feedback to a call record"""
+    db = load_db()
+    
+    for record in db:
+        if record['id'] == record_id:
+            record['admin_feedback'] = {
+                'feedback_text': feedback_text,
+                'focus_areas': focus_areas,
+                'rating': rating,
+                'feedback_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'feedback_by': 'Admin'
+            }
+            break
+    
+    save_db(db)
+    return True
+
+def analyze_call_with_gpt(call_type, additional_context, manual_scores=None, rm_name=None):
+    """Enhanced GPT analysis with robust Iron Lady parameters, case study detection, and admin feedback context"""
     try:
         if manual_scores:
             return generate_analysis_from_scores(manual_scores, call_type, "Manual scoring with GPT-generated insights")
         
+        # Get previous admin feedback for this RM
+        previous_feedback = get_rm_feedback_history(rm_name) if rm_name else []
+        
+        # Build feedback context
+        feedback_context = ""
+        if previous_feedback:
+            feedback_context = "\n\n**🎯 ADMIN FEEDBACK HISTORY FOR THIS RM:**\n"
+            feedback_context += f"This RM ({rm_name}) has received admin feedback in {len(previous_feedback)} previous calls. "
+            feedback_context += "Pay special attention to previously identified improvement areas:\n\n"
+            
+            for i, fb in enumerate(previous_feedback[-3:], 1):  # Last 3 feedbacks
+                feedback_context += f"**Call {i} - {fb['date']}** ({fb['call_type']}, Score: {fb['score']}/100):\n"
+                feedback_context += f"📝 Admin Feedback: \"{fb['feedback']}\"\n"
+                if fb.get('focus_areas'):
+                    feedback_context += f"🎯 Focus Areas: {fb['focus_areas']}\n"
+                feedback_context += "\n"
+            
+            feedback_context += "**⚡ CRITICAL INSTRUCTION:** Evaluate this current call considering the admin's previous feedback. "
+            feedback_context += "Has the RM improved in the mentioned areas? Are they repeating mistakes? "
+            feedback_context += "In your analysis, explicitly comment on whether the RM has addressed previous admin feedback. "
+            feedback_context += "If improvements are seen, acknowledge them positively. If issues persist, emphasize them strongly.\n"
+        
         focus_areas = CALL_TYPE_FOCUS.get(call_type, [])
         
         prompt = f"""{IRON_LADY_CONTEXT}
-
+{feedback_context}
 **YOUR TASK:**
 Analyze this {call_type} call based on the Iron Lady methodology. This is a CRITICAL analysis that will be used for RM coaching, so be EXTREMELY DETAILED and SPECIFIC.
 
@@ -1471,9 +1534,8 @@ elif page == "Upload & Analyze":
                 
                 st.success(f"✅ File uploaded to S3 (auto-deletes in 7 days)")
                 
-                # Analyze
-                # Analyze - Pure GPT only (v3.0)
-                analysis = analyze_call_with_gpt(call_type, additional_context)
+                # Analyze with RM feedback history
+                analysis = analyze_call_with_gpt(call_type, additional_context, rm_name=rm_name)
                 
                 # Save to database
                 db = load_db()
@@ -1551,6 +1613,23 @@ elif page == "Upload & Analyze":
                 
                 st.markdown("**Executive Summary:**")
                 st.info(analysis['call_summary'])
+                
+                # Show previous admin feedback if this RM has history
+                previous_feedback = get_rm_feedback_history(rm_name)
+                if previous_feedback:
+                    st.markdown("---")
+                    st.markdown("### 📋 Your Admin Feedback History")
+                    st.caption(f"You have received feedback on {len(previous_feedback)} previous calls")
+                    
+                    with st.expander(f"💡 View Your Last {min(3, len(previous_feedback))} Feedback(s)", expanded=False):
+                        for i, fb in enumerate(reversed(previous_feedback[-3:]), 1):
+                            st.markdown(f"**Call {i}: {fb['date']}** - {fb['call_type']} (Score: {fb['score']}/100)")
+                            st.info(f"📝 Admin Feedback: {fb['feedback']}")
+                            if fb.get('focus_areas'):
+                                st.warning(f"🎯 Focus on: {fb['focus_areas']}")
+                            st.markdown("---")
+                        
+                        st.caption("💡 This feedback was considered in your current call analysis!")
                 
                 # HIGHLIGHT Case Studies & Principles (NEW!)
                 if 'enhanced_tracking' in analysis:
@@ -2529,6 +2608,127 @@ elif page == "Admin View":
                         st.audio(audio_url, format='audio/mp3')
                         
                         st.caption("💡 Audio link expires in 1 hour. Click 'Refresh Link' to generate a new one.")
+                        
+                        # Find corresponding database record by matching filename/date
+                        st.markdown("---")
+                        st.markdown("### 📝 Admin Feedback for This Call")
+                        
+                        # Try to find the matching record
+                        db = load_db()
+                        matching_record = None
+                        
+                        # Extract participant name and date from filename
+                        filename_parts = rec['filename'].replace('.mp3', '').replace('.wav', '').replace('.m4a', '').split('_')
+                        
+                        for record in db:
+                            # Match by filename or date + participant
+                            if (rec['filename'] in record.get('file_name', '') or 
+                                (record.get('client_name', '').replace(' ', '_') in rec['filename'] and 
+                                 record.get('call_date', '') in rec['key'])):
+                                matching_record = record
+                                break
+                        
+                        if matching_record:
+                            st.success(f"✅ Found call record: {matching_record['client_name']} - {matching_record['call_date']}")
+                            
+                            # Show current score
+                            current_score = matching_record.get('analysis', {}).get('overall_score', 0)
+                            col_score1, col_score2, col_score3 = st.columns(3)
+                            with col_score1:
+                                st.metric("Current Score", f"{current_score:.1f}/100")
+                            with col_score2:
+                                st.metric("RM", matching_record['rm_name'])
+                            with col_score3:
+                                st.metric("Call Type", matching_record['call_type'])
+                            
+                            # Check if feedback already exists
+                            existing_feedback = matching_record.get('admin_feedback', {})
+                            
+                            if existing_feedback:
+                                st.info("📋 **Existing Admin Feedback:**")
+                                st.write(f"**Feedback:** {existing_feedback.get('feedback_text', 'N/A')}")
+                                st.write(f"**Focus Areas:** {existing_feedback.get('focus_areas', 'N/A')}")
+                                st.write(f"**Admin Rating:** {'⭐' * existing_feedback.get('rating', 0)}")
+                                st.write(f"**Date:** {existing_feedback.get('feedback_date', 'N/A')}")
+                                
+                                if st.button("✏️ Edit Feedback", key=f"edit_fb_{idx}"):
+                                    st.session_state[f"edit_feedback_{idx}"] = True
+                            
+                            # Show feedback form
+                            if not existing_feedback or st.session_state.get(f"edit_feedback_{idx}", False):
+                                with st.form(key=f"admin_feedback_form_{idx}"):
+                                    st.markdown("**Provide your admin feedback after listening to the call:**")
+                                    
+                                    feedback_text = st.text_area(
+                                        "📝 Detailed Feedback",
+                                        value=existing_feedback.get('feedback_text', ''),
+                                        placeholder="What did the RM do well? What needs improvement? Specific examples...",
+                                        height=150,
+                                        help="Be specific about what you heard in the call"
+                                    )
+                                    
+                                    focus_areas = st.text_input(
+                                        "🎯 Key Focus Areas for Next Call",
+                                        value=existing_feedback.get('focus_areas', ''),
+                                        placeholder="e.g., Use more case studies by name, Improve BHAG expansion, Work on closing",
+                                        help="What should the RM focus on improving?"
+                                    )
+                                    
+                                    admin_rating = st.slider(
+                                        "⭐ Admin Quality Rating",
+                                        min_value=1,
+                                        max_value=5,
+                                        value=existing_feedback.get('rating', 3),
+                                        help="Your subjective quality rating after listening"
+                                    )
+                                    
+                                    col_submit, col_cancel = st.columns([1, 1])
+                                    
+                                    with col_submit:
+                                        submit_feedback = st.form_submit_button("💾 Save Feedback", use_container_width=True)
+                                    
+                                    with col_cancel:
+                                        if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                            if f"edit_feedback_{idx}" in st.session_state:
+                                                del st.session_state[f"edit_feedback_{idx}"]
+                                            st.rerun()
+                                    
+                                    if submit_feedback:
+                                        if feedback_text:
+                                            save_admin_feedback(
+                                                matching_record['id'],
+                                                feedback_text,
+                                                focus_areas,
+                                                admin_rating
+                                            )
+                                            st.success("✅ Admin feedback saved! This will be used in the RM's next call analysis.")
+                                            
+                                            # Clear edit mode
+                                            if f"edit_feedback_{idx}" in st.session_state:
+                                                del st.session_state[f"edit_feedback_{idx}"]
+                                            
+                                            st.rerun()
+                                        else:
+                                            st.error("Please provide feedback text")
+                            
+                            # Show RM's feedback history
+                            with st.expander(f"📊 {matching_record['rm_name']}'s Feedback History"):
+                                rm_history = get_rm_feedback_history(matching_record['rm_name'])
+                                
+                                if rm_history:
+                                    st.write(f"**Total Calls with Feedback:** {len(rm_history)}")
+                                    
+                                    for i, hist in enumerate(reversed(rm_history[-5:]), 1):  # Last 5
+                                        st.markdown(f"**{i}. {hist['date']}** - {hist['call_type']} (Score: {hist['score']}/100)")
+                                        st.write(f"   📝 {hist['feedback']}")
+                                        if hist.get('focus_areas'):
+                                            st.write(f"   🎯 Focus: {hist['focus_areas']}")
+                                        st.markdown("---")
+                                else:
+                                    st.info("No previous feedback for this RM")
+                        
+                        else:
+                            st.warning("⚠️ No matching call record found in database. Upload may be pending analysis.")
                     else:
                         st.warning("⚠️ Could not load audio. Click 'Refresh Link' to try again.")
             
