@@ -2613,17 +2613,55 @@ elif page == "Admin View":
                         # Find corresponding database record by matching filename/date
                         db = load_db()
                         matching_record = None
+                        possible_matches = []
                         
-                        # Extract participant name and date from filename
-                        filename_parts = rec['filename'].replace('.mp3', '').replace('.wav', '').replace('.m4a', '').split('_')
-                        
+                        # Try multiple matching strategies
                         for record in db:
-                            # Match by filename or date + participant
-                            if (rec['filename'] in record.get('file_name', '') or 
-                                (record.get('client_name', '').replace(' ', '_') in rec['filename'] and 
-                                 record.get('call_date', '') in rec['key'])):
-                                matching_record = record
-                                break
+                            match_score = 0
+                            match_reasons = []
+                            
+                            # Strategy 1: Exact filename match
+                            if rec['filename'] in record.get('file_name', ''):
+                                match_score += 100
+                                match_reasons.append("Exact filename")
+                            
+                            # Strategy 2: Filename contains client name
+                            client_name_clean = record.get('client_name', '').replace(' ', '_').replace('-', '_').lower()
+                            filename_clean = rec['filename'].lower()
+                            if client_name_clean and client_name_clean in filename_clean:
+                                match_score += 50
+                                match_reasons.append("Client name in filename")
+                            
+                            # Strategy 3: Date in S3 path matches call date
+                            if record.get('call_date', '') in rec['key']:
+                                match_score += 30
+                                match_reasons.append("Date match")
+                            
+                            # Strategy 4: S3 URL match
+                            if record.get('file_path', '') == f"s3://{get_bucket_name()}/{rec['key']}":
+                                match_score += 100
+                                match_reasons.append("S3 URL match")
+                            
+                            # Strategy 5: RM name in filename
+                            rm_name_clean = record.get('rm_name', '').replace(' ', '_').replace('-', '_').lower()
+                            if rm_name_clean and rm_name_clean in filename_clean:
+                                match_score += 20
+                                match_reasons.append("RM name in filename")
+                            
+                            if match_score > 0:
+                                possible_matches.append({
+                                    'record': record,
+                                    'score': match_score,
+                                    'reasons': match_reasons
+                                })
+                        
+                        # Sort by match score and take best match
+                        possible_matches.sort(key=lambda x: x['score'], reverse=True)
+                        
+                        if possible_matches:
+                            best_match = possible_matches[0]
+                            if best_match['score'] >= 50:  # Confidence threshold
+                                matching_record = best_match['record']
                         
                         with col_info:
                             if matching_record:
@@ -2633,13 +2671,55 @@ elif page == "Admin View":
                                 st.write(f"**Participant:** {matching_record['client_name']}")
                                 st.write(f"**Type:** {matching_record['call_type']}")
                                 st.write(f"**Date:** {matching_record['call_date']}")
+                                
+                                # Show match confidence
+                                if possible_matches:
+                                    match_info = possible_matches[0]
+                                    st.caption(f"✅ Match: {', '.join(match_info['reasons'])}")
+                                    
+                                    # If multiple possible matches, show selector
+                                    if len(possible_matches) > 1 and possible_matches[1]['score'] >= 30:
+                                        with st.expander(f"🔄 Other possible matches ({len(possible_matches)-1})"):
+                                            st.caption("If this is the wrong call, select the correct one:")
+                                            for i, match in enumerate(possible_matches[1:4], 1):  # Show top 3 alternatives
+                                                rec_info = match['record']
+                                                if st.button(
+                                                    f"{rec_info['client_name']} - {rec_info['rm_name']} - {rec_info['call_date']} ({rec_info['call_type']})",
+                                                    key=f"alt_match_{idx}_{i}"
+                                                ):
+                                                    matching_record = rec_info
+                                                    st.rerun()
                             else:
-                                st.warning("⚠️ Call record not found in database")
+                                st.markdown("### ⚠️ Record Not Found")
+                                st.warning("Call not in database")
+                                st.caption("Select manually below or analyze call first")
+                                
+                                # Manual selection fallback - ALWAYS VISIBLE
+                                if db:
+                                    with st.expander("🔍 **Click Here to Select Call Record**", expanded=True):
+                                        st.caption("📌 Select the database record that matches this audio file:")
+                                        
+                                        # Show recent records first
+                                        recent_records = sorted(db, key=lambda x: x.get('call_date', ''), reverse=True)[:20]
+                                        
+                                        for i, rec_option in enumerate(recent_records):
+                                            if st.button(
+                                                f"{rec_option['client_name']} - {rec_option['rm_name']} - {rec_option['call_date']} ({rec_option['call_type']}) - Score: {rec_option.get('analysis', {}).get('overall_score', 0):.1f}",
+                                                key=f"manual_select_{idx}_{i}",
+                                                use_container_width=True
+                                            ):
+                                                matching_record = rec_option
+                                                st.success(f"✅ Selected: {rec_option['client_name']}")
+                                                st.rerun()
                         
-                        # ADMIN FEEDBACK SECTION - PROMINENT!
-                        if matching_record:
-                            st.markdown("---")
-                            st.markdown("## 📝 Admin Feedback Section")
+                        # ADMIN FEEDBACK SECTION - ALWAYS VISIBLE!
+                        st.markdown("---")
+                        st.markdown("## 📝 Admin Feedback Section")
+                        
+                        if not matching_record:
+                            st.warning("⚠️ **Please select a call record above to provide feedback**")
+                            st.caption("Use the '🔍 Click Here to Select Call Record' section above to link this audio to a database record")
+                        else:
                             st.markdown("**Listen to the call above, then provide your feedback below:**")
                             
                             # Check if feedback already exists
@@ -2771,9 +2851,6 @@ Be specific about:
                                 else:
                                     st.info(f"No previous feedback history for {matching_record['rm_name']}")
                                     st.caption("This will be their first admin feedback!")
-                        
-                        else:
-                            st.warning("⚠️ No matching call record found in database. The call may not have been analyzed yet.")
             
             st.markdown("---")
             st.markdown("""
