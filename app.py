@@ -2712,21 +2712,18 @@ elif page == "Admin View":
                                                 st.success(f"✅ Selected: {rec_option['client_name']}")
                                                 st.rerun()
                         
-                        # ADMIN FEEDBACK SECTION - ALWAYS VISIBLE!
+                        # ADMIN FEEDBACK SECTION - ALWAYS VISIBLE WITH FORM!
                         st.markdown("---")
                         st.markdown("## 📝 Admin Feedback Section")
+                        st.markdown("**Listen to the call above, then provide your feedback below:**")
                         
-                        if not matching_record:
-                            st.warning("⚠️ **Please select a call record above to provide feedback**")
-                            st.caption("Use the '🔍 Click Here to Select Call Record' section above to link this audio to a database record")
-                        else:
-                            st.markdown("**Listen to the call above, then provide your feedback below:**")
-                            
-                            # Check if feedback already exists
+                        # Check if we have a matching record
+                        existing_feedback = {}
+                        if matching_record:
                             existing_feedback = matching_record.get('admin_feedback', {})
                             
-                            if existing_feedback:
-                                # Show existing feedback with option to edit
+                            # Show existing feedback if present
+                            if existing_feedback and not st.session_state.get(f"edit_feedback_{idx}", False):
                                 st.success("✅ **You have already provided feedback for this call**")
                                 
                                 col_fb1, col_fb2 = st.columns([3, 1])
@@ -2742,20 +2739,24 @@ elif page == "Admin View":
                                     if st.button("✏️ Edit Feedback", key=f"edit_fb_{idx}", use_container_width=True):
                                         st.session_state[f"edit_feedback_{idx}"] = True
                                         st.rerun()
+                        
+                        # ALWAYS SHOW FEEDBACK FORM (unless existing feedback and not in edit mode)
+                        if not existing_feedback or st.session_state.get(f"edit_feedback_{idx}", False) or not matching_record:
+                            st.markdown("---")
                             
-                            # Show feedback form (new or edit mode)
-                            if not existing_feedback or st.session_state.get(f"edit_feedback_{idx}", False):
-                                st.markdown("---")
+                            # Show warning if no record selected
+                            if not matching_record:
+                                st.info("💡 **Note:** Please select the correct call record above before submitting feedback. You can still fill out the form, but you'll need to link it to a call record to save.")
+                            
+                            with st.form(key=f"admin_feedback_form_{idx}"):
+                                st.markdown("### ✍️ Provide Your Admin Feedback")
                                 
-                                with st.form(key=f"admin_feedback_form_{idx}"):
-                                    st.markdown("### ✍️ Provide Your Admin Feedback")
-                                    
-                                    st.markdown("**After listening to the call, please provide:**")
-                                    
-                                    feedback_text = st.text_area(
-                                        "📝 Detailed Feedback (Required)",
-                                        value=existing_feedback.get('feedback_text', ''),
-                                        placeholder="""Example: "Great rapport building - used participant name 7 times. Excellent BHAG expansion from ₹50L to ₹1.2cr. However, did NOT mention any case studies by name. When discussing transformation, could have used Chandana or Pushpalatha examples. Closing was weak - asked 'What do you think?' instead of 'Powerfully Invite'. No urgency created - didn't mention limited spots or deadline."
+                                st.markdown("**After listening to the call, please provide:**")
+                                
+                                feedback_text = st.text_area(
+                                    "📝 Detailed Feedback (Required)",
+                                    value=existing_feedback.get('feedback_text', ''),
+                                    placeholder="""Example: "Great rapport building - used participant name 7 times. Excellent BHAG expansion from ₹50L to ₹1.2cr. However, did NOT mention any case studies by name. When discussing transformation, could have used Chandana or Pushpalatha examples. Closing was weak - asked 'What do you think?' instead of 'Powerfully Invite'. No urgency created - didn't mention limited spots or deadline."
 
 Be specific about:
 • What the RM did well
@@ -2808,7 +2809,9 @@ Be specific about:
                                         )
                                     
                                     if submit_feedback:
-                                        if feedback_text and focus_areas:
+                                        if not matching_record:
+                                            st.error("❌ Please select a call record from the '🔍 Click Here to Select Call Record' section above before saving feedback")
+                                        elif feedback_text and focus_areas:
                                             save_admin_feedback(
                                                 matching_record['id'],
                                                 feedback_text,
@@ -2832,25 +2835,26 @@ Be specific about:
                                             del st.session_state[f"edit_feedback_{idx}"]
                                         st.rerun()
                             
-                            # Show RM's feedback history for context
-                            st.markdown("---")
-                            with st.expander(f"📊 View {matching_record['rm_name']}'s Complete Feedback History"):
-                                rm_history = get_rm_feedback_history(matching_record['rm_name'])
-                                
-                                if rm_history:
-                                    st.write(f"**Total Calls with Admin Feedback:** {len(rm_history)}")
-                                    st.markdown("**Recent feedback provided:**")
+                            # Show RM's feedback history for context (only if record is linked)
+                            if matching_record:
+                                st.markdown("---")
+                                with st.expander(f"📊 View {matching_record['rm_name']}'s Complete Feedback History"):
+                                    rm_history = get_rm_feedback_history(matching_record['rm_name'])
                                     
-                                    for i, hist in enumerate(reversed(rm_history[-5:]), 1):  # Last 5
-                                        st.markdown(f"### Call {i}: {hist['date']}")
-                                        st.write(f"**Type:** {hist['call_type']} | **Score:** {hist['score']}/100")
-                                        st.info(f"📝 Feedback: {hist['feedback']}")
-                                        if hist.get('focus_areas'):
-                                            st.warning(f"🎯 Focus Areas: {hist['focus_areas']}")
-                                        st.markdown("---")
-                                else:
-                                    st.info(f"No previous feedback history for {matching_record['rm_name']}")
-                                    st.caption("This will be their first admin feedback!")
+                                    if rm_history:
+                                        st.write(f"**Total Calls with Admin Feedback:** {len(rm_history)}")
+                                        st.markdown("**Recent feedback provided:**")
+                                        
+                                        for i, hist in enumerate(reversed(rm_history[-5:]), 1):  # Last 5
+                                            st.markdown(f"### Call {i}: {hist['date']}")
+                                            st.write(f"**Type:** {hist['call_type']} | **Score:** {hist['score']}/100")
+                                            st.info(f"📝 Feedback: {hist['feedback']}")
+                                            if hist.get('focus_areas'):
+                                                st.warning(f"🎯 Focus Areas: {hist['focus_areas']}")
+                                            st.markdown("---")
+                                    else:
+                                        st.info(f"No previous feedback history for {matching_record['rm_name']}")
+                                        st.caption("This will be their first admin feedback!")
             
             st.markdown("---")
             st.markdown("""
