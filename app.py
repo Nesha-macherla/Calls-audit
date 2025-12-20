@@ -2426,9 +2426,41 @@ elif page == "Admin View":
                 analyses = [a for a in analyses if search.lower() in a['filename'].lower()]
                 st.caption(f"Showing {len(analyses)} matching analyses")
             
+            # Pagination settings
+            analysis_items_per_page = st.selectbox(
+                "📄 Items per page:",
+                options=[10, 25, 50, 100, 200, "All"],
+                index=2,  # Default to 50
+                key="analysis_items_per_page"
+            )
+            
+            # Apply pagination
+            if analysis_items_per_page == "All":
+                display_analyses = analyses
+                st.info(f"📊 Displaying all {len(analyses)} analysis files")
+            else:
+                total_pages = (len(analyses) + analysis_items_per_page - 1) // analysis_items_per_page
+                
+                if total_pages > 1:
+                    page = st.number_input(
+                        f"Page (1-{total_pages}):",
+                        min_value=1,
+                        max_value=total_pages,
+                        value=1,
+                        key="analysis_page"
+                    )
+                else:
+                    page = 1
+                
+                start_idx = (page - 1) * analysis_items_per_page
+                end_idx = start_idx + analysis_items_per_page
+                display_analyses = analyses[start_idx:end_idx]
+                
+                st.info(f"📊 Showing {len(display_analyses)} of {len(analyses)} analysis files (Page {page}/{total_pages})")
+            
             # Display analyses
             st.markdown("---")
-            for idx, analysis in enumerate(analyses[:50]):
+            for idx, analysis in enumerate(display_analyses):
                 days_old = (datetime.now(analysis['last_modified'].tzinfo) - analysis['last_modified']).days
                 
                 if days_old >= 7:
@@ -2547,8 +2579,45 @@ elif page == "Admin View":
             
             st.markdown("---")
             
+            # Pagination settings
+            items_per_page = st.selectbox(
+                "📄 Items per page:",
+                options=[10, 25, 50, 100, 200, "All"],
+                index=2,  # Default to 50
+                key="s3_items_per_page"
+            )
+            
+            # Sort recordings
+            sorted_recordings = sorted(recordings, key=lambda x: x['last_modified'], reverse=True)
+            
+            # Apply pagination
+            if items_per_page == "All":
+                display_recordings = sorted_recordings
+                st.info(f"📊 Displaying all {len(sorted_recordings)} recordings")
+            else:
+                total_pages = (len(sorted_recordings) + items_per_page - 1) // items_per_page
+                
+                if total_pages > 1:
+                    page = st.number_input(
+                        f"Page (1-{total_pages}):",
+                        min_value=1,
+                        max_value=total_pages,
+                        value=1,
+                        key="s3_page"
+                    )
+                else:
+                    page = 1
+                
+                start_idx = (page - 1) * items_per_page
+                end_idx = start_idx + items_per_page
+                display_recordings = sorted_recordings[start_idx:end_idx]
+                
+                st.info(f"📊 Showing {len(display_recordings)} of {len(sorted_recordings)} recordings (Page {page}/{total_pages})")
+            
+            st.markdown("---")
+            
             # Display recordings with audio players
-            for idx, rec in enumerate(sorted(recordings, key=lambda x: x['last_modified'], reverse=True)[:50]):
+            for idx, rec in enumerate(display_recordings):
                 days_old = (datetime.now(rec['last_modified'].tzinfo) - rec['last_modified']).days
                 
                 if days_old >= 7:
@@ -2699,8 +2768,28 @@ elif page == "Admin View":
                                     with st.expander("🔍 **Click Here to Select Call Record**", expanded=True):
                                         st.caption("📌 Select the database record that matches this audio file:")
                                         
-                                        # Show recent records first
-                                        recent_records = sorted(db, key=lambda x: x.get('call_date', ''), reverse=True)[:20]
+                                        # Add search within manual selection
+                                        manual_search = st.text_input(
+                                            "Search records:",
+                                            placeholder="Filter by name, date, or type...",
+                                            key=f"manual_search_{idx}"
+                                        )
+                                        
+                                        # Show recent records first (increased from 20 to 100)
+                                        recent_records = sorted(db, key=lambda x: x.get('call_date', ''), reverse=True)[:100]
+                                        
+                                        # Apply search filter if provided
+                                        if manual_search:
+                                            recent_records = [
+                                                r for r in recent_records 
+                                                if manual_search.lower() in r.get('client_name', '').lower() 
+                                                or manual_search.lower() in r.get('rm_name', '').lower()
+                                                or manual_search.lower() in r.get('call_date', '').lower()
+                                                or manual_search.lower() in r.get('call_type', '').lower()
+                                            ]
+                                            st.caption(f"Found {len(recent_records)} matching records")
+                                        else:
+                                            st.caption(f"Showing {len(recent_records)} most recent records (of {len(db)} total)")
                                         
                                         for i, rec_option in enumerate(recent_records):
                                             if st.button(
@@ -2864,7 +2953,7 @@ Be specific about:
             - 🔴 **Will delete** (7+ days) - Scheduled for deletion
             """)
             
-            st.caption(f"💡 Showing {min(len(recordings), 50)} most recent recordings")
+            st.caption(f"💡 Use pagination above to navigate through all {len(recordings)} recordings")
             st.caption("🎵 Click 'Play Audio' to listen to any recording in the app")
 
 # Footer
