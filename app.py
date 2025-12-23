@@ -2279,7 +2279,7 @@ elif page == "Admin View":
             st.markdown("---")
             st.subheader("🔍 Detailed Call Records")
             
-            for record in reversed(filtered_db[:15]):  # Show last 15
+            for admin_idx, record in enumerate(reversed(filtered_db[:15])):  # Show last 15
                 analysis = record.get('analysis', {})
                 score = analysis.get('overall_score', 0)
                 score_emoji = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
@@ -2356,7 +2356,7 @@ elif page == "Admin View":
                     col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 2])
                     
                     with col_a:
-                        if st.button("🗑️ Delete", key=f"del_admin_{record['id']}"):
+                        if st.button("🗑️ Delete", key=f"del_admin_{record['id']}_{admin_idx}"):
                             delete_record(record['id'])
                             st.success("Deleted!")
                             st.rerun()
@@ -2368,7 +2368,7 @@ elif page == "Admin View":
                             data=summary,
                             file_name=f"Iron_Lady_Report_{record['id']}.txt",
                             mime="text/plain",
-                            key=f"sum_adm_{record['id']}"
+                            key=f"sum_adm_{record['id']}_{admin_idx}"
                         )
                     
                     with col_c:
@@ -2378,7 +2378,7 @@ elif page == "Admin View":
                             data=json_data,
                             file_name=f"record_{record['id']}.json",
                             mime="application/json",
-                            key=f"json_adm_{record['id']}"
+                            key=f"json_adm_{record['id']}_{admin_idx}"
                         )
     
     # TAB 2: S3 Analysis JSONs
